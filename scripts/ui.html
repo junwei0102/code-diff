@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="dr-token" content="__DR_TOKEN__">
+<title>Diff Review</title>
+<style>
+:root {
+  --bg: #ffffff; --bg-2: #f6f8fa; --bg-3: #eef1f4; --fg: #1f2328; --fg-2: #59636e; --fg-3: #818b98;
+  --border: #d1d9e0; --border-2: #e6eaef;
+  --accent: #0969da; --accent-fg: #ffffff; --accent-soft: #ddf4ff;
+  --add-bg: #e6ffec; --add-num: #ccffd8; --add-word: #abf2bc; --add-fg: #1a7f37;
+  --del-bg: #ffebe9; --del-num: #ffcecb; --del-word: #ffc1bc; --del-fg: #cf222e;
+  --hunk-bg: #eef5ff; --hunk-fg: #59636e;
+  --sel-bg: #fff8c5; --sel-num: #f5d65b;
+  --ai: #8250df; --ai-soft: #f6f0ff; --author: #bc4c00; --author-soft: #fff4ea;
+  --warn: #9a6700; --warn-soft: #fff8c5; --ok: #1a7f37; --ok-soft: #dafbe1; --bad: #cf222e; --bad-soft: #ffebe9;
+  --anno-0: rgba(130, 80, 223, .07); --anno-1: rgba(9, 105, 218, .06); --anno-bar: #a475f9;
+  --shadow: 0 10px 30px rgba(31, 35, 40, .18);
+  --hl-kw: #cf222e; --hl-str: #0a3069; --hl-com: #6e7781; --hl-num: #0550ae; --hl-fn: #8250df;
+  --hl-type: #953800; --hl-attr: #0550ae; --hl-var: #953800; --hl-meta: #57606a; --hl-tag: #116329;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", Helvetica, Arial, sans-serif;
+  --head-h: 52px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117; --bg-2: #151b23; --bg-3: #212830; --fg: #e6edf3; --fg-2: #9198a1; --fg-3: #6e7681;
+    --border: #3d444d; --border-2: #262d36;
+    --accent: #4493f8; --accent-fg: #0d1117; --accent-soft: #12243c;
+    --add-bg: rgba(46, 160, 67, .14); --add-num: rgba(46, 160, 67, .28); --add-word: rgba(46, 160, 67, .45); --add-fg: #3fb950;
+    --del-bg: rgba(248, 81, 73, .12); --del-num: rgba(248, 81, 73, .28); --del-word: rgba(248, 81, 73, .45); --del-fg: #f85149;
+    --hunk-bg: rgba(56, 139, 253, .10); --hunk-fg: #9198a1;
+    --sel-bg: rgba(187, 128, 9, .24); --sel-num: rgba(187, 128, 9, .55);
+    --ai: #bc8cff; --ai-soft: rgba(163, 113, 247, .12); --author: #ffa657; --author-soft: rgba(219, 109, 40, .13);
+    --warn: #d29922; --warn-soft: rgba(187, 128, 9, .15); --ok: #3fb950; --ok-soft: rgba(46, 160, 67, .15); --bad: #f85149; --bad-soft: rgba(248, 81, 73, .13);
+    --anno-0: rgba(163, 113, 247, .10); --anno-1: rgba(56, 139, 253, .09); --anno-bar: #a371f7;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .55);
+    --hl-kw: #ff7b72; --hl-str: #a5d6ff; --hl-com: #8b949e; --hl-num: #79c0ff; --hl-fn: #d2a8ff;
+    --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-var: #ffa657; --hl-meta: #8b949e; --hl-tag: #7ee787;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1117; --bg-2: #151b23; --bg-3: #212830; --fg: #e6edf3; --fg-2: #9198a1; --fg-3: #6e7681;
+  --border: #3d444d; --border-2: #262d36;
+  --accent: #4493f8; --accent-fg: #0d1117; --accent-soft: #12243c;
+  --add-bg: rgba(46, 160, 67, .14); --add-num: rgba(46, 160, 67, .28); --add-word: rgba(46, 160, 67, .45); --add-fg: #3fb950;
+  --del-bg: rgba(248, 81, 73, .12); --del-num: rgba(248, 81, 73, .28); --del-word: rgba(248, 81, 73, .45); --del-fg: #f85149;
+  --hunk-bg: rgba(56, 139, 253, .10); --hunk-fg: #9198a1;
+  --sel-bg: rgba(187, 128, 9, .24); --sel-num: rgba(187, 128, 9, .55);
+  --ai: #bc8cff; --ai-soft: rgba(163, 113, 247, .12); --author: #ffa657; --author-soft: rgba(219, 109, 40, .13);
+  --warn: #d29922; --warn-soft: rgba(187, 128, 9, .15); --ok: #3fb950; --ok-soft: rgba(46, 160, 67, .15); --bad: #f85149; --bad-soft: rgba(248, 81, 73, .13);
+  --anno-0: rgba(163, 113, 247, .10); --anno-1: rgba(56, 139, 253, .09); --anno-bar: #a371f7;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .55);
+  --hl-kw: #ff7b72; --hl-str: #a5d6ff; --hl-com: #8b949e; --hl-num: #79c0ff; --hl-fn: #d2a8ff;
+  --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-var: #ffa657; --hl-meta: #8b949e; --hl-tag: #7ee787;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+[hidden] { display: none !important; }
+.mono { font-family: var(--mono); }
+.muted { color: var(--fg-2); }
+.small { font-size: 12px; }
+.spacer { flex: 1; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--bg-2); }
+
+/* header */
+#top { position: sticky; top: 0; z-index: 30; height: var(--head-h); display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+.brand { display: flex; align-items: center; gap: 6px; font-weight: 650; white-space: nowrap; }
+.logo { color: var(--accent); font-size: 18px; }
+.meta { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.meta .repo { font-size: 15px; }
+.stat { color: var(--fg-2); font-size: 13px; }
+.add { color: var(--add-fg); }
+.del { color: var(--del-fg); }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--fg-2); background: var(--bg); white-space: nowrap; }
+.chip.tiny { font-size: 11px; padding: 0 7px; }
+.chip.c-round { border-color: var(--accent); color: var(--accent); }
+.chip.c-done { border-color: var(--ok); color: var(--ok); }
+.chip.c-author { border-color: var(--author); color: var(--author); }
+.chip.c-pending { border-color: var(--warn); color: var(--warn); }
+.chip.c-ok { border-color: var(--ok); color: var(--ok); }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; white-space: nowrap; line-height: 1.35; }
+.btn:hover { background: var(--bg-3); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.sm { padding: 2px 9px; font-size: 12.5px; }
+.btn.xs { padding: 1px 7px; font-size: 12px; }
+.btn.icon { padding: 5px 9px; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--bg-3); }
+.btn.ai { color: var(--ai); border-color: var(--ai); }
+.btn.warn { color: var(--warn); }
+.btn.ok { color: var(--ok); }
+.btn.verdict-ok.on { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 600; }
+.btn.verdict-bad.on { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.chip-btn { border: 1px dashed var(--border); background: var(--bg); border-radius: 999px; padding: 1px 10px; font-size: 12px; cursor: pointer; color: var(--fg-2); }
+.chip-btn:hover { border-style: solid; color: var(--fg); }
+
+/* layout */
+#layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); }
+#side { position: sticky; top: var(--head-h); height: calc(100vh - var(--head-h)); display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg); }
+.side-head { padding: 10px 12px 6px; border-bottom: 1px solid var(--border-2); }
+#filter { width: 100%; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+#progress { margin-top: 6px; }
+#filelist { flex: 1; overflow: auto; padding: 4px 0; }
+.side-foot { padding: 8px 12px; border-top: 1px solid var(--border-2); }
+.pad { padding: 8px 12px; }
+.fi { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 4px 12px; color: var(--fg); border-left: 2px solid transparent; }
+.fi:hover { background: var(--bg-2); text-decoration: none; }
+.fi.active { background: var(--accent-soft); border-left-color: var(--accent); }
+.fi .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fi .dir { color: var(--fg-3); font-size: 11.5px; margin-left: 6px; }
+.fi.v-ok .base { color: var(--fg-2); }
+.fi .fmeta { display: flex; gap: 4px; font-size: 11.5px; color: var(--fg-2); }
+.b-ok { color: var(--ok); font-weight: 700; }
+.b-bad { color: var(--bad); font-weight: 700; }
+.st { display: inline-block; font: 600 11px/16px var(--mono); width: 16px; height: 16px; text-align: center; border-radius: 3px; flex: none; }
+.st-A, .st-U { color: var(--add-fg); background: var(--add-bg); }
+.st-D { color: var(--del-fg); background: var(--del-bg); }
+.st-M { color: var(--warn); background: var(--warn-soft); }
+.st-R, .st-C { color: var(--accent); background: var(--accent-soft); }
+#main { padding: 16px 20px 120px; min-width: 0; }
+.only-narrow { display: none; }
+
+/* banners and cards */
+.banner { padding: 9px 14px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.banner.err { background: var(--bad-soft); border-color: var(--bad); }
+.banner.warn { background: var(--warn-soft); border-color: var(--warn); }
+.banner.ok { background: var(--ok-soft); border-color: var(--ok); }
+.banner.info { background: var(--accent-soft); border-color: var(--accent); }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; background: var(--bg); }
+.card-h { font-weight: 650; margin-bottom: 6px; display: flex; gap: 8px; align-items: baseline; }
+details.card > summary { cursor: pointer; font-weight: 600; }
+details.card[open] > summary { margin-bottom: 6px; }
+.notes { border-left: 3px solid var(--author); }
+.hist-row { padding: 3px 0; }
+.ask-global textarea { width: 100%; resize: vertical; min-height: 38px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); margin-bottom: 6px; }
+#global-threads .thread { margin-bottom: 12px; max-width: none; }
+.empty { text-align: center; padding: 60px 20px; font-size: 18px; }
+.loading { padding: 40px; color: var(--fg-2); }
+
+/* file sections */
+section.file { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; background: var(--bg); }
+.file-head { position: sticky; top: var(--head-h); z-index: 10; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-2); border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; flex-wrap: wrap; }
+section.file.folded .file-head { border-bottom: 0; border-radius: 8px; }
+section.file.folded .file-body { display: none; }
+section.file.v-ok .file-head { background: var(--ok-soft); }
+section.file.v-bad .file-head { background: var(--bad-soft); }
+.fold { border: 0; background: none; cursor: pointer; color: var(--fg-2); padding: 0 2px; font-size: 13px; transition: transform .15s; }
+section.file.folded .fold { transform: rotate(-90deg); }
+.file-head .path { font-weight: 600; cursor: pointer; overflow-wrap: anywhere; min-width: 0; }
+.file-head .cnt { font: 12px var(--mono); }
+.file-note { padding: 8px 14px; border-bottom: 1px solid var(--border-2); background: var(--author-soft); font-size: 13.5px; }
+.file-note .who { font-weight: 600; color: var(--author); font-size: 12.5px; }
+.file-info { padding: 6px 14px; border-bottom: 1px solid var(--border-2); }
+.file-threads:not(:empty) { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border-2); }
+
+/* diff table */
+table.diff { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12.5px/1.6 var(--mono); }
+col.c-ln { width: 50px; }
+td.ln { padding: 0 8px 0 4px; text-align: right; color: var(--fg-3); user-select: none; cursor: pointer; vertical-align: top; white-space: nowrap; overflow: hidden; }
+td.ln:hover { color: var(--accent); background: var(--accent-soft) !important; }
+td.code { padding: 0 12px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; -moz-tab-size: 4; }
+.mk { display: inline-block; width: 1.3em; user-select: none; color: var(--fg-3); }
+tr.add td.code { background-color: var(--add-bg); }
+tr.add td.ln { background: var(--add-num); color: var(--fg-2); }
+tr.add .mk { color: var(--add-fg); }
+tr.del td.code { background-color: var(--del-bg); }
+tr.del td.ln { background: var(--del-num); color: var(--fg-2); }
+tr.del .mk { color: var(--del-fg); }
+tr.hunk td { background: var(--hunk-bg); color: var(--hunk-fg); padding-top: 3px; padding-bottom: 3px; }
+tr.hunk td.ln { cursor: default; }
+tr.hunk td.ln:hover { background: var(--hunk-bg) !important; color: var(--hunk-fg); }
+.hh { margin-right: 10px; }
+.hbtn { border: 1px solid var(--border); background: var(--bg); color: var(--ai); border-radius: 999px; padding: 0 9px; font: 12px var(--sans); cursor: pointer; }
+.hbtn:hover { border-color: var(--ai); }
+tr.info td { padding: 10px 16px; color: var(--fg-2); font-family: var(--sans); }
+tr.sel td.code { background-color: var(--sel-bg) !important; }
+tr.sel td.ln { background: var(--sel-num) !important; color: var(--fg); }
+.wd { border-radius: 3px; }
+tr.add .wd { background: var(--add-word); }
+tr.del .wd { background: var(--del-word); }
+.noeol, .cr { color: var(--fg-3); margin-left: 4px; font-size: 11px; }
+tr.ann td.code { box-shadow: inset 3px 0 0 var(--anno-bar); }
+tr.ann-0 td.code { background-image: linear-gradient(var(--anno-0), var(--anno-0)); }
+tr.ann-1 td.code { background-image: linear-gradient(var(--anno-1), var(--anno-1)); }
+tr.flash td { animation: flash 1.8s ease-out; }
+@keyframes flash { 0%, 35% { background-color: var(--sel-num); } }
+tr.thread-row > td, tr.anno-row > td, tr.anno-head > td, tr.actbar > td { padding: 6px 14px 8px 58px; font-family: var(--sans); font-size: 13.5px; white-space: normal; background: var(--bg); }
+tr.anno-row > td { padding: 0 14px 0 58px; background: transparent; }
+tr.anno-row td.ln { padding: 0; }
+tr.anno-head > td { padding-top: 4px; padding-bottom: 4px; background: var(--ai-soft); }
+.anno-note { margin: 2px 0 6px; padding: 6px 12px; border-left: 3px solid var(--anno-bar); background: var(--ai-soft); border-radius: 0 6px 6px 0; font: 13.5px/1.6 var(--sans); }
+.anno-rng { font: 11.5px var(--mono); color: var(--ai); margin-right: 6px; }
+.anno-note .md { display: inline; }
+.anno-note .md > p:first-child { display: inline; }
+.anno-bar { display: flex; align-items: center; gap: 8px; color: var(--ai); font-size: 13px; flex-wrap: wrap; }
+.err-inline { color: var(--bad); }
+
+/* selection action bar and composers */
+.bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--sel-num); border-radius: 8px; background: var(--bg); box-shadow: var(--shadow); max-width: 940px; }
+.composer { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; background: var(--bg); box-shadow: var(--shadow); max-width: 940px; }
+.composer.is-change { border-color: var(--warn); }
+.cmp-title { font-weight: 600; margin-bottom: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.composer textarea, .th-compose textarea, .modal textarea { width: 100%; resize: vertical; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); margin-bottom: 6px; line-height: 1.5; }
+.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
+
+/* threads */
+.thread { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); max-width: 940px; overflow: hidden; }
+.thread.k-change { border-left: 3px solid var(--warn); }
+.thread.overview { border-left: 3px solid var(--ai); }
+.thread.outdated { opacity: .85; }
+.th-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; background: var(--bg-2); border-bottom: 1px solid var(--border-2); font-size: 12.5px; flex-wrap: wrap; }
+.th-head .where { font-family: var(--mono); font-size: 12px; }
+.th-head .tid { font: 11px var(--mono); color: var(--fg-3); }
+.th-sum { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+.badge { font-weight: 600; }
+.b-change { color: var(--warn); }
+.b-q { color: var(--accent); }
+.b-ov { color: var(--ai); }
+.thread.outdated .th-head::after { content: "代码已变，原位置找不到了"; color: var(--fg-3); font-size: 11.5px; }
+.th-msgs { padding: 2px 12px; }
+.msg { padding: 8px 0; border-bottom: 1px dashed var(--border-2); }
+.msg:last-child { border-bottom: 0; }
+.msg .who { font-size: 12px; font-weight: 650; color: var(--fg-2); margin-bottom: 2px; }
+.msg.r-ai .who { color: var(--ai); }
+.msg.r-author { background: var(--author-soft); margin: 4px -12px; padding: 8px 12px; }
+.msg.r-author .who { color: var(--author); }
+.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.pending { color: var(--fg-2); font-size: 12.5px; margin-top: 4px; }
+.err { color: var(--bad); white-space: pre-wrap; font-size: 12.5px; margin-top: 4px; }
+details.tools { font-size: 12px; color: var(--fg-2); margin-top: 4px; }
+details.old-ai > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--ai); }
+details.tools summary { cursor: pointer; }
+.th-foot { display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--border-2); flex-wrap: wrap; align-items: center; }
+.th-compose { padding: 8px 10px; border-top: 1px solid var(--border-2); }
+.thread.resolved .th-msgs, .thread.resolved .th-foot, .thread.resolved .th-compose { display: none; }
+.thread.resolved.open .th-msgs { display: block; }
+.thread.resolved.open .th-foot { display: flex; }
+.thread.resolved .th-head { border-bottom: 0; }
+
+/* markdown */
+.md { line-height: 1.65; overflow-wrap: anywhere; }
+.md p { margin: .35em 0; }
+.md ul, .md ol { margin: .35em 0; padding-left: 1.5em; }
+.md li { margin: .15em 0; }
+.md h3, .md h4, .md h5, .md h6 { margin: .8em 0 .3em; font-size: 1em; }
+.md h3 { font-size: 1.08em; }
+.md code { font-family: var(--mono); font-size: .88em; background: var(--bg-3); padding: .1em .35em; border-radius: 4px; }
+.md pre { background: var(--bg-2); border: 1px solid var(--border-2); border-radius: 6px; padding: 8px 12px; overflow: auto; font-size: 12.5px; line-height: 1.5; margin: .5em 0; }
+.md pre code { background: none; padding: 0; font-size: inherit; }
+.md blockquote { margin: .4em 0; padding-left: .9em; border-left: 3px solid var(--border); color: var(--fg-2); }
+.md .tbl { overflow-x: auto; }
+.md table { border-collapse: collapse; margin: .5em 0; font-size: .95em; }
+.md th, .md td { border: 1px solid var(--border); padding: 3px 9px; text-align: left; }
+.md hr { border: 0; border-top: 1px solid var(--border); }
+.d-add { color: var(--add-fg); }
+.d-del { color: var(--del-fg); }
+a.lref { font-family: var(--mono); font-size: .92em; border-bottom: 1px dotted var(--accent); }
+a.lref:hover { text-decoration: none; background: var(--accent-soft); }
+.review-md { max-height: 60vh; overflow: auto; border: 1px solid var(--border-2); border-radius: 6px; padding: 8px 14px; margin-top: 8px; }
+
+/* syntax highlighting (highlight.js class names) */
+.hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag { color: var(--hl-kw); }
+.hljs-string, .hljs-regexp, .hljs-char { color: var(--hl-str); }
+.hljs-comment, .hljs-quote { color: var(--hl-com); font-style: italic; }
+.hljs-number, .hljs-symbol, .hljs-bullet { color: var(--hl-num); }
+.hljs-title, .hljs-section { color: var(--hl-fn); }
+.hljs-type, .hljs-built_in, .hljs-title.class_ { color: var(--hl-type); }
+.hljs-attr, .hljs-attribute, .hljs-property { color: var(--hl-attr); }
+.hljs-variable, .hljs-template-variable, .hljs-params { color: var(--hl-var); }
+.hljs-meta { color: var(--hl-meta); }
+.hljs-name, .hljs-tag, .hljs-selector-class, .hljs-selector-id { color: var(--hl-tag); }
+.hljs-addition { color: var(--add-fg); }
+.hljs-deletion { color: var(--del-fg); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+
+/* modal, toasts, spinner */
+#modal { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .38); display: flex; align-items: flex-start; justify-content: center; padding: 7vh 16px; overflow: auto; }
+.modal { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); width: min(640px, 100%); padding: 18px 22px; }
+.modal.wide { width: min(1100px, 100%); }
+.modal h2 { margin: 0 0 12px; font-size: 18px; }
+.modal h3 { margin: 16px 0 6px; font-size: 15px; }
+.modal .row { margin-top: 12px; }
+.verdicts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.vopt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.vopt:hover { background: var(--bg-2); }
+.vopt input { margin-top: 4px; }
+.vopt b { display: block; }
+.vopt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.sum { background: var(--bg-2); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.sum .warn { color: var(--warn); }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-weight: 600; font-size: 13px; }
+.field select { font-weight: 400; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.help li { margin-bottom: 6px; }
+table.keys td { padding: 2px 12px 2px 0; }
+.vf-head { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; flex-wrap: wrap; }
+.vf-body { max-height: 72vh; overflow: auto; }
+table.vf td.ln { cursor: default; }
+#toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.toast { padding: 9px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); box-shadow: var(--shadow); font-size: 13px; white-space: pre-wrap; }
+.toast.err { background: var(--bad); color: #fff; }
+.toast.ok { background: var(--ok); color: #fff; }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--ai); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  #layout { grid-template-columns: minmax(0, 1fr); }
+  #side { position: fixed; left: 0; top: var(--head-h); bottom: 0; height: auto; width: 84vw; max-width: 320px; z-index: 40; transform: translateX(-102%); transition: transform .2s; box-shadow: var(--shadow); }
+  body.side-open #side { transform: none; }
+  .only-narrow { display: inline-flex; }
+  .hide-narrow { display: none !important; }
+  #top { gap: 6px; padding: 0 8px; }
+  #main { padding: 12px 8px 120px; }
+  col.c-ln { width: 38px; }
+  table.diff { font-size: 12px; }
+  tr.thread-row > td, tr.anno-row > td, tr.anno-head > td, tr.actbar > td { padding-left: 8px; padding-right: 8px; }
+  .file-head .btn .lbl, #btn-overview .lbl { display: none; }
+}
+</style>
+</head>
+<body>
+<header id="top">
+  <button class="btn icon only-narrow" data-act="toggle-side" title="文件列表">☰</button>
+  <div class="brand"><span class="logo">◧</span><span class="hide-narrow">Diff Review</span></div>
+  <div class="meta" id="meta"></div>
+  <div class="spacer"></div>
+  <button class="btn" data-act="overview" id="btn-overview" title="让 AI 带你通读整个改动">📖<span class="lbl"> 整体讲解</span></button>
+  <button class="btn icon" data-act="help" title="用法和快捷键（?）">?</button>
+  <button class="btn icon" data-act="settings" title="设置">⚙</button>
+  <button class="btn icon" data-act="theme" title="切换明暗">◐</button>
+  <button class="btn primary" data-act="open-submit" id="btn-submit">提交 review</button>
+</header>
+<div id="layout">
+  <nav id="side">
+    <div class="side-head"><input id="filter" type="search" placeholder="筛选文件…" autocomplete="off"><div id="progress" class="small muted"></div></div>
+    <div id="filelist"></div>
+    <div class="side-foot small muted">点行号选行 · Shift/拖动 多选 · j/k 换文件 · ? 帮助</div>
+  </nav>
+  <main id="main">
+    <div id="banners"></div>
+    <section id="intro"></section>
+    <section id="files"><div class="loading"><span class="spin"></span> 加载 diff…</div></section>
+  </main>
+</div>
+<div id="modal" hidden></div>
+<div id="toasts"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async crossorigin="anonymous" referrerpolicy="no-referrer" onload="window.dispatchEvent(new Event('hljs-ready'))"></script>
+<script>
+'use strict';
+const TOKEN = document.querySelector('meta[name="dr-token"]').content;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const trunc = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+const stripCR = s => s.endsWith('\r') ? s.slice(0, -1) : s;
+const idNum = id => +String(id).replace(/\D/g, '') || 0;
+const byId = (a, b) => idNum(a.id) - idNum(b.id);
+
+const S = {
+  serverId: null, diffVersion: null, version: 0, round: 1, rounds: {}, settings: {}, jobs: 0,
+  repo: {}, ai: {available: false}, listen: {}, stats: {}, files: [], byPath: {}, notes: {summary: '', files: {}}, skipped: [],
+  threads: {}, annos: {}, verdicts: {}, threadEls: {}, sel: null, composer: null, actbar: null,
+  collapsed: {}, hideAnno: {}, connected: true, booted: false, newRoundBanner: null,
+};
+
+const DEFAULT_Q = '这几行在做什么？为什么要这样改？';
+const ASK_CHIPS = ['这段在干嘛？', '为什么要这样写？', '有更简单的写法吗？', '这里会不会有 bug？', '举个具体输入输出的例子'];
+const CHANGE_CHIPS = ['太绕了，写简单点', '命名看不懂', '拆成小函数', '这段不需要，删掉', '加注释说明为什么', '和项目现有写法不一致'];
+const REWRITE_CHIPS = ['整个文件太复杂，重写', '抽象层太多', '和现有代码风格不一致', '这个文件不需要改'];
+const OVERALL_CHIPS = ['整体太复杂，请简化重写', '改动范围太大，拆小一点', '跟仓库现有风格不一致', '先补测试', '命名太随意'];
+const VERDICT_ZH = {approve: '✅ 通过', comment: '💬 只提问', changes: '↩️ 打回修改'};
+const MODELS = [['', '默认（跟随你的 Claude Code 设置）'], ['sonnet', 'Sonnet（快）'], ['opus', 'Opus（更强）'], ['haiku', 'Haiku（最快）']];
+const GENERATED = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|Pipfile\.lock)$|\.min\.(js|css)$|\.map$/;
+const EXT_LANG = {
+  py: 'python', pyi: 'python', pyx: 'python', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+  ts: 'typescript', tsx: 'typescript', json: 'json', md: 'markdown', markdown: 'markdown', sh: 'bash', bash: 'bash',
+  zsh: 'bash', slurm: 'bash', sbatch: 'bash', yml: 'yaml', yaml: 'yaml', toml: 'ini', ini: 'ini', cfg: 'ini', conf: 'ini',
+  c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp', cu: 'cpp', cuh: 'cpp', java: 'java',
+  kt: 'kotlin', go: 'go', rs: 'rust', rb: 'ruby', php: 'php', swift: 'swift', m: 'objectivec', mm: 'objectivec',
+  cs: 'csharp', r: 'r', lua: 'lua', pl: 'perl', sql: 'sql', html: 'xml', htm: 'xml', xml: 'xml', vue: 'xml', svg: 'xml',
+  css: 'css', scss: 'scss', less: 'less', diff: 'diff', patch: 'diff', graphql: 'graphql',
+};
+
+// ---------------------------------------------------------------- server API
+async function api(method, url, body) {
+  let r;
+  try {
+    r = await fetch(url, {method, cache: 'no-store', headers: {'X-DR-Token': TOKEN, 'Content-Type': 'application/json'},
+                          body: body === undefined ? undefined : JSON.stringify(body)});
+  } catch (e) { throw new Error('连不上 diff-review 服务（' + e.message + '）'); }
+  let data = null;
+  try { data = await r.json(); } catch (e) { /* not JSON */ }
+  if (!r.ok) throw new Error((data && data.error) || 'HTTP ' + r.status);
+  return data;
+}
+
+async function boot() {
+  const y = S.booted ? window.scrollY : 0;
+  const data = await api('GET', '/api/bootstrap');
+  Object.assign(S, {serverId: data.serverId, diffVersion: data.diffVersion, repo: data.repo, ai: data.ai,
+                    listen: data.listen, stats: data.stats, files: data.files, skipped: data.skipped, notes: data.notes});
+  S.byPath = {};
+  S.files.forEach(prepFile);
+  Object.assign(S, {threads: {}, annos: {}, threadEls: {}, sel: null, composer: null, actbar: null});
+  applyState(data.state, true);
+  try {  // remember the last round seen in this tab, to greet a new one
+    const key = 'dr-seen-round:' + S.repo.root, seen = +sessionStorage.getItem(key) || 0;
+    if (seen && S.round > seen) S.newRoundBanner = S.round;
+    sessionStorage.setItem(key, String(S.round));
+  } catch (e) { /* storage blocked */ }
+  renderAll();
+  S.booted = true;
+  if (y) window.scrollTo(0, y);
+}
+
+function applyState(st, initial) {
+  Object.assign(S, {version: st.version, round: st.round, rounds: st.rounds || {}, settings: st.settings || {}, jobs: st.jobs || 0});
+  const verdictsChanged = JSON.stringify(st.verdicts || {}) !== JSON.stringify(S.verdicts);
+  S.verdicts = st.verdicts || {};
+  const touched = new Set();
+  for (const id of st.deleted || []) {
+    if (S.threads[id]) { touched.add(S.threads[id].file); delete S.threads[id]; dropThreadEl(id); }
+    if (S.annos[id]) { touched.add(S.annos[id].file); delete S.annos[id]; }
+  }
+  for (const [id, t] of Object.entries(st.threads || {})) {
+    const old = S.threads[id];
+    S.threads[id] = t;
+    if (initial) continue;
+    if (!old || !S.threadEls[id]) touched.add(t.file); else updateThreadEl(t);
+  }
+  for (const [id, a] of Object.entries(st.annotations || {})) {
+    const old = S.annos[id];
+    S.annos[id] = a;
+    if (initial) continue;
+    if (!old || old.status !== a.status) touched.add(a.file); else updateAnnoHead(a);
+  }
+  if (initial) return;
+  touched.forEach(placeExtras);
+  if (verdictsChanged) S.files.forEach(f => refreshFileHead(f));
+  renderSidebar();
+  renderHeader();
+  renderBanners();
+}
+
+async function poll() {
+  let delay = 2500;
+  try {
+    const st = await api('GET', '/api/state?since=' + S.version);
+    if (!S.connected) { S.connected = true; renderBanners(); }
+    if (st.serverId !== S.serverId) { location.reload(); return; }
+    if (st.diffVersion !== S.diffVersion) await boot();
+    else if (st.version !== S.version || st.jobs !== S.jobs) applyState(st, false);
+    if (st.jobs > 0) delay = 700;
+  } catch (e) {
+    if (S.connected) { S.connected = false; renderBanners(); }
+    delay = 3000;
+  }
+  setTimeout(poll, delay);
+}
+
+// ---------------------------------------------------------------- model helpers
+function prepFile(f, k) {
+  f.idx = k;
+  S.byPath[f.path] = f;
+  f.rows = []; f.hunkStart = [];
+  f.hunks.forEach((h, hi) => {
+    f.hunkStart.push(f.rows.length);
+    for (const r of h.rows) f.rows.push({t: r[0], o: r[1], n: r[2], s: r[3], noeol: r.length > 4, h: hi, i: f.rows.length});
+  });
+  f.lang = langOf(f.path);
+  f.big = f.rows.length > 1500 || GENERATED.test(f.path);
+  f.rowEls = null;
+  f.painted = false;
+}
+function langOf(path) {
+  const base = path.split('/').pop().toLowerCase();
+  if (base === 'makefile' || base.endsWith('.mk')) return 'makefile';
+  if (base === 'dockerfile') return 'dockerfile';
+  if (base === 'cmakelists.txt') return 'cmake';
+  return EXT_LANG[base.includes('.') ? base.split('.').pop() : ''] || null;
+}
+const fileSec = path => S.byPath[path] ? document.getElementById('file-' + S.byPath[path].idx) : null;
+const fileOf = el => S.byPath[el.closest('section.file').dataset.path];
+const threadsOf = path => Object.values(S.threads).filter(t => t.file === path).sort(byId);
+const annosOf = path => Object.values(S.annos).filter(a => a.file === path).sort(byId);
+const isGlobal = t => !t.file || !S.byPath[t.file];
+function needsAuthor(t) {
+  if (t.resolved || !(t.kind === 'change' || t.askAuthor)) return false;
+  let lastUser = -1, lastAuthor = -1;
+  t.messages.forEach((m, i) => { if (m.role === 'user') lastUser = i; if (m.role === 'author') lastAuthor = i; });
+  return lastUser > lastAuthor;
+}
+function rangeLabel(f, a, b) {
+  const rows = f.rows.slice(a, b + 1);
+  const ns = rows.filter(r => r.n != null).map(r => r.n), os = rows.filter(r => r.o != null).map(r => r.o);
+  if (ns.length) return ns[0] === ns[ns.length - 1] ? 'L' + ns[0] : `L${ns[0]}–L${ns[ns.length - 1]}`;
+  if (os.length) return os[0] === os[os.length - 1] ? '旧 L' + os[0] : `旧 L${os[0]}–L${os[os.length - 1]}`;
+  return '';
+}
+function anchorLabel(t) {
+  const a = t.anchor;
+  if (!a || a.start == null) return '整个文件';
+  const span = a.start === a.end ? 'L' + a.start : `L${a.start}–L${a.end}`;
+  return a.side === 'old' ? '旧 ' + span : span;
+}
+function makeAnchor(f, a, b) {
+  const rows = f.rows.slice(a, b + 1);
+  const ns = rows.filter(r => r.n != null).map(r => r.n), os = rows.filter(r => r.o != null).map(r => r.o);
+  const useNew = ns.length > 0, nums = useNew ? ns : os;
+  return {rowStart: a, rowEnd: b, side: useNew ? 'new' : 'old', start: nums[0], end: nums[nums.length - 1],
+          lines: rows.map(r => r.t + r.s)};
+}
+// Find where a thread's lines are in the current diff (the code may have moved since it was asked).
+function locate(t, f) {
+  const a = t.anchor, lines = a.lines || [];
+  if (!lines.length) return a.rowEnd < f.rows.length ? {start: a.rowStart, end: a.rowEnd} : null;
+  const same = i => lines.every((l, k) => f.rows[i + k] && f.rows[i + k].t + f.rows[i + k].s === l);
+  if (same(a.rowStart)) return {start: a.rowStart, end: a.rowStart + lines.length - 1};
+  let best = -1;
+  for (let i = 0; i + lines.length <= f.rows.length; i++) {
+    if (same(i) && (best < 0 || Math.abs(i - a.rowStart) < Math.abs(best - a.rowStart))) best = i;
+  }
+  return best < 0 ? null : {start: best, end: best + lines.length - 1};
+}
+function baseLabel() {
+  const r = S.repo;
+  if (r.patch) return 'patch: ' + r.patch.split('/').pop();
+  if (r.emptyBase) return '空仓库 → 工作区';
+  if (r.range) return r.base;
+  return `${r.base}${r.baseSha ? ' (' + r.baseSha + ')' : ''} → 工作区`;
+}
+
+// ---------------------------------------------------------------- rendering: page chrome
+function renderAll() {
+  renderHeader(); renderSidebar(); renderBanners(); renderIntro(); renderFiles();
+}
+function renderHeader() {
+  const sub = (S.rounds[S.round] || {}).submitted;
+  $('#meta').innerHTML = `<b class="repo">${esc(S.repo.name || '')}</b>
+    ${S.repo.branch ? `<span class="chip hide-narrow" title="分支">⎇ ${esc(S.repo.branch)}</span>` : ''}
+    <span class="chip hide-narrow" title="对比的基准">${esc(baseLabel())}</span>
+    <span class="chip ${sub ? 'c-done' : 'c-round'}">第 ${S.round} 轮${sub ? ' · 已提交' : ''}</span>
+    <span class="stat hide-narrow">${S.stats.files || 0} 个文件 <span class="add">+${S.stats.additions || 0}</span> <span class="del">−${S.stats.deletions || 0}</span></span>`;
+  const btn = $('#btn-submit');
+  btn.disabled = !!sub;
+  btn.textContent = sub ? '已提交' : '提交 review';
+  $('#btn-overview').hidden = !S.ai.available;
+  document.title = `${S.repo.name || ''} · 第${S.round}轮 · Diff Review`;
+}
+function fileItemHTML(f) {
+  const v = (S.verdicts[f.path] || {}).state;
+  const open = threadsOf(f.path).filter(t => !t.resolved);
+  const nChange = open.filter(t => t.kind === 'change').length, nQ = open.length - nChange;
+  const cut = f.path.lastIndexOf('/');
+  const dir = cut >= 0 ? f.path.slice(0, cut + 1) : '', base = f.path.slice(cut + 1);
+  return `<a class="fi ${v ? 'v-' + v : ''}" href="#" data-act="goto-file" data-path="${esc(f.path)}" title="${esc(f.path)}">
+    <span class="st st-${f.untracked ? 'U' : f.status}" title="${f.untracked ? '未跟踪的新文件' : ''}">${f.untracked ? 'U' : f.status}</span>
+    <span class="fname"><span class="base">${esc(base)}</span><span class="dir">${esc(dir)}</span></span>
+    <span class="fmeta">${nChange ? `<span>🚩${nChange}</span>` : ''}${nQ ? `<span>💬${nQ}</span>` : ''}${v === 'ok' ? '<span class="b-ok">✓</span>' : v === 'rewrite' ? '<span class="b-bad">✗</span>' : ''}</span></a>`;
+}
+function renderSidebar() {
+  const q = $('#filter').value.trim().toLowerCase();
+  const items = S.files.filter(f => !q || f.path.toLowerCase().includes(q)).map(fileItemHTML).join('');
+  $('#filelist').innerHTML = items || '<div class="muted small pad">没有匹配的文件</div>';
+  const ok = S.files.filter(f => (S.verdicts[f.path] || {}).state === 'ok').length;
+  const open = Object.values(S.threads).filter(t => !t.resolved);
+  const changes = open.filter(t => t.kind === 'change').length;
+  $('#progress').innerHTML = `已看懂 <b>${ok}</b>/${S.files.length}` + (changes ? ` · 🚩 ${changes}` : '') + (open.length - changes ? ` · 💬 ${open.length - changes}` : '');
+  markActive();
+}
+function renderBanners() {
+  const out = [];
+  if (!S.connected) out.push('<div class="banner err">⚠ 连不上 diff-review 服务，正在重试…（如果这次 review 已经结束，可以关掉这个页面）</div>');
+  if (!S.ai.available && S.ai.error) out.push(`<div class="banner warn">AI 解释不可用：${esc(S.ai.error)}。你仍然可以把问题留给作者，或者直接打回。</div>`);
+  const sub = (S.rounds[S.round] || {}).submitted;
+  if (sub) {
+    const text = sub.verdict === 'approve' ? `✅ 第 ${S.round} 轮已通过，可以关掉这个页面了。`
+      : `已提交第 ${S.round} 轮（${VERDICT_ZH[sub.verdict]}）。agent 处理完会推送第 ${S.round + 1} 轮，这个页面会自动刷新。`;
+    out.push(`<div class="banner ${sub.verdict === 'approve' ? 'ok' : 'info'}">${text} <a href="#" data-act="show-review" data-round="${S.round}">看提交内容</a></div>`);
+  } else if (S.newRoundBanner === S.round && S.round > 1) {
+    out.push(`<div class="banner ok">🔄 第 ${S.round} 轮：agent 已经按你的意见更新了。先看「作者说明」和各个讨论里作者的回复。<span class="spacer"></span><button class="btn xs ghost" data-act="dismiss-banner">知道了</button></div>`);
+  }
+  $('#banners').innerHTML = out.join('');
+}
+function renderIntro() {
+  const past = Object.values(S.rounds).filter(r => r.n < S.round && r.submitted).sort((a, b) => b.n - a.n);
+  let html = `<div class="card notes"><div class="card-h">✍️ 作者说明 <span class="muted small">第 ${S.round} 轮 · 写代码的 agent 自己写的</span></div>
+    ${S.notes.summary ? `<div class="md">${md(S.notes.summary)}</div>` : '<div class="muted">agent 这次没有写整体说明。</div>'}</div>`;
+  if (past.length) {
+    html += `<details class="card"><summary>之前的轮次（${past.length}）</summary>${past.map(r => `<div class="hist-row"><b>第 ${r.n} 轮</b> · ${VERDICT_ZH[r.submitted.verdict]}${r.submitted.comment ? ' · ' + esc(trunc(r.submitted.comment, 140)) : ''} · <a href="#" data-act="show-review" data-round="${r.n}">提交的内容</a></div>`).join('')}</details>`;
+  }
+  if (S.skipped.length) {
+    html += `<details class="card"><summary>${S.skipped.length} 项没有显示</summary>${S.skipped.map(s => `<div class="small"><span class="mono">${esc(s.path)}</span> <span class="muted">— ${esc(s.reason)}</span></div>`).join('')}</details>`;
+  }
+  html += `<div id="global-threads"></div>
+    <div class="card ask-global"><textarea rows="1" placeholder="问一个关于整体改动的问题…（比如：为什么要新增这个依赖？）"></textarea>
+      <div class="row"><span class="muted small">Ctrl/⌘+Enter 发送</span><span class="spacer"></span>
+      <button class="btn sm ${S.ai.available ? '' : 'primary'}" data-act="global-ask-author" title="写代码的 agent 下一轮回答">问作者（下一轮回答）</button>
+      ${S.ai.available ? '<button class="btn sm primary" data-act="global-ask-ai">问 AI</button>' : ''}</div></div>`;
+  $('#intro').innerHTML = html;
+  placeGlobalThreads();
+}
+
+// ---------------------------------------------------------------- rendering: files and diff rows
+let io = null;
+function renderFiles() {
+  const box = $('#files');
+  box.innerHTML = '';
+  if (!S.files.length) {
+    box.innerHTML = `<div class="empty">没有改动 🎉<div class="muted small">对比基准：${esc(baseLabel())}。如果 agent 已经 commit 了，用 --base 指定更早的 commit。</div></div>`;
+    return;
+  }
+  for (const f of S.files) box.appendChild(fileSection(f));
+  S.files.forEach(f => placeExtras(f.path));
+  if (io) io.disconnect();
+  io = new IntersectionObserver(entries => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      const f = S.byPath[en.target.closest('section.file').dataset.path];
+      if (f) { if (!f.rowEls) { buildRows(f); placeExtras(f.path); } paintFile(f); }
+    }
+  }, {rootMargin: '800px 0px'});
+  $$('section.file .file-body').forEach(el => io.observe(el));
+}
+function fileSection(f) {
+  const sec = document.createElement('section');
+  sec.className = 'file';
+  sec.id = 'file-' + f.idx;
+  sec.dataset.path = f.path;
+  const folded = f.path in S.collapsed ? S.collapsed[f.path] : ((S.verdicts[f.path] || {}).state === 'ok' || f.big);
+  sec.classList.toggle('folded', folded);
+  const note = S.notes.files[f.path];
+  sec.innerHTML = `<div class="file-head"></div><div class="file-body">
+    ${note ? `<div class="file-note"><span class="who">✍️ 作者：</span><div class="md">${md(note, f.path)}</div></div>` : ''}
+    ${f.big ? `<div class="file-info muted small">${GENERATED.test(f.path) ? '看起来是自动生成的文件，' : '改动很大，'}默认折叠（${f.rows.length} 行）</div>` : ''}
+    <div class="file-threads"></div>
+    <table class="diff"><colgroup><col class="c-ln"><col class="c-ln"><col></colgroup><tbody></tbody></table></div>`;
+  refreshFileHead(f, sec);
+  if (!folded) buildRows(f, sec);
+  return sec;
+}
+function fileHeadHTML(f) {
+  const v = (S.verdicts[f.path] || {}).state;
+  const name = f.oldPath && f.oldPath !== f.path ? `${esc(f.oldPath)} → ${esc(f.path)}` : esc(f.path);
+  return `<button class="fold" data-act="fold" title="折叠/展开">▾</button>
+    <span class="st st-${f.untracked ? 'U' : f.status}">${f.untracked ? 'U' : f.status}</span>
+    <span class="path mono" data-act="fold">${name}</span>
+    ${f.untracked ? '<span class="chip tiny">未跟踪</span>' : ''}
+    <span class="cnt"><span class="add">+${f.additions}</span> <span class="del">−${f.deletions}</span></span>
+    <span class="spacer"></span>
+    ${f.rows.length && S.ai.available ? '<button class="btn sm ghost" data-act="annotate-file" title="让 AI 一段一段讲这个文件的改动">📖<span class="lbl"> 逐行讲解</span></button>' : ''}
+    <button class="btn sm ghost" data-act="ask-file" title="问一个关于整个文件的问题">❓<span class="lbl"> 提问</span></button>
+    ${S.repo.patch ? '' : '<button class="btn sm ghost" data-act="view-file" title="看完整文件">🗎<span class="lbl"> 完整文件</span></button>'}
+    <button class="btn sm verdict-ok ${v === 'ok' ? 'on' : ''}" data-act="verdict-ok" title="看懂了，没问题（会折叠起来）">✓<span class="lbl"> 看懂了</span></button>
+    <button class="btn sm verdict-bad ${v === 'rewrite' ? 'on' : ''}" data-act="verdict-bad" title="这个文件需要重写">✗<span class="lbl"> 需重写</span></button>`;
+}
+function refreshFileHead(f, sec = fileSec(f.path)) {
+  if (!sec) return;
+  sec.querySelector('.file-head').innerHTML = fileHeadHTML(f);
+  const v = (S.verdicts[f.path] || {}).state;
+  sec.classList.toggle('v-ok', v === 'ok');
+  sec.classList.toggle('v-bad', v === 'rewrite');
+}
+function codeCell(r) {
+  const cr = r.s.endsWith('\r') ? '<span class="cr" title="CRLF">␍</span>' : '';
+  return `<span class="mk">${r.t === ' ' ? '' : r.t}</span><span class="src">${esc(stripCR(r.s))}</span>${cr}${r.noeol ? '<span class="noeol" title="文件末尾没有换行">⏎̸</span>' : ''}`;
+}
+function rowsHTML(f) {
+  if (f.binary) return '<tr class="info"><td colspan="3">二进制文件，不显示内容</td></tr>';
+  if (f.skipped) return `<tr class="info"><td colspan="3">${esc(f.skipped)}</td></tr>`;
+  if (!f.rows.length) return `<tr class="info"><td colspan="3">${f.meta.length ? esc(f.meta.join(' · ')) : '没有文本改动（空文件，或者只改了权限/重命名）'}</td></tr>`;
+  let html = '';
+  f.hunks.forEach((h, hi) => {
+    html += `<tr class="hunk"><td class="ln" colspan="2">⋯</td><td class="code"><span class="hh">${esc(h.header)}</span>${S.ai.available ? `<button class="hbtn" data-act="annotate-hunk" data-h="${hi}">📖 逐行讲解这段</button>` : ''}</td></tr>`;
+    for (let i = f.hunkStart[hi]; i < f.hunkStart[hi] + h.rows.length; i++) {
+      const r = f.rows[i];
+      html += `<tr class="r ${r.t === '+' ? 'add' : r.t === '-' ? 'del' : 'ctx'}" data-i="${i}"><td class="ln" data-i="${i}">${r.o == null ? '' : r.o}</td><td class="ln" data-i="${i}">${r.n == null ? '' : r.n}</td><td class="code">${codeCell(r)}</td></tr>`;
+    }
+  });
+  return html;
+}
+function buildRows(f, sec = fileSec(f.path)) {
+  if (f.rowEls || !sec) return;
+  const tbody = sec.querySelector('tbody');
+  tbody.innerHTML = rowsHTML(f);
+  f.rowEls = [];
+  for (const tr of tbody.querySelectorAll('tr.r')) f.rowEls[+tr.dataset.i] = tr;
+}
+function setFold(path, folded) {
+  const sec = fileSec(path);
+  if (!sec) return;
+  S.collapsed[path] = folded;
+  sec.classList.toggle('folded', folded);
+  const f = S.byPath[path];
+  if (!folded && !f.rowEls) { buildRows(f, sec); placeExtras(path); }
+}
+
+// Syntax highlighting (when highlight.js loaded) and word-level change marks.
+function hlLines(lines, lang) {
+  if (!window.hljs || !lang || !hljs.getLanguage(lang) || !lines.length) return null;
+  let html;
+  try { html = hljs.highlight(lines.join('\n'), {language: lang, ignoreIllegals: true}).value; } catch (e) { return null; }
+  const out = [], open = [];
+  let cur = '', last = 0, m;
+  const re = /<span class="([^"]*)">|<\/span>|\n/g;
+  while ((m = re.exec(html))) {
+    cur += html.slice(last, m.index);
+    last = re.lastIndex;
+    if (m[0] === '\n') { out.push(cur + '</span>'.repeat(open.length)); cur = open.map(c => `<span class="${c}">`).join(''); }
+    else if (m[0] === '</span>') { open.pop(); cur += m[0]; }
+    else { open.push(m[1]); cur += m[0]; }
+  }
+  out.push(cur + html.slice(last));
+  return out.length === lines.length ? out : null;
+}
+function tokens(s) { return s.match(/[A-Za-z0-9_]+|\s+|[^A-Za-z0-9_\s]/g) || []; }
+function wordDiff(a, b) {
+  const A = tokens(a), B = tokens(b), n = A.length, m = B.length;
+  if (!n || !m || n * m > 90000) return null;
+  const dp = Array.from({length: n + 1}, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ra = [], rb = [];
+  let i = 0, j = 0, pa = 0, pb = 0, common = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { common += A[i].length; pa += A[i++].length; pb += B[j++].length; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ra.push([pa, pa + A[i].length]); pa += A[i++].length; }
+    else { rb.push([pb, pb + B[j].length]); pb += B[j++].length; }
+  }
+  while (i < n) { ra.push([pa, pa + A[i].length]); pa += A[i++].length; }
+  while (j < m) { rb.push([pb, pb + B[j].length]); pb += B[j++].length; }
+  if (common < 0.35 * Math.max(a.length, b.length)) return null;  // unrelated lines: marking words would be noise
+  const merge = rs => rs.reduce((acc, r) => { const p = acc[acc.length - 1]; if (p && p[1] === r[0]) p[1] = r[1]; else acc.push(r.slice()); return acc; }, []);
+  return [merge(ra), merge(rb)];
+}
+function pairChanges(f) {
+  const out = new Map(), rows = f.rows;
+  let i = 0;
+  while (i < rows.length) {
+    if (rows[i].t !== '-') { i++; continue; }
+    let j = i;
+    while (j < rows.length && rows[j].t === '-' && rows[j].h === rows[i].h) j++;
+    let k = j;
+    while (k < rows.length && rows[k].t === '+' && rows[k].h === rows[i].h) k++;
+    for (let p = 0; p < Math.min(j - i, k - j); p++) {
+      const res = wordDiff(stripCR(rows[i + p].s), stripCR(rows[j + p].s));
+      if (res) { if (res[0].length) out.set(i + p, res[0]); if (res[1].length) out.set(j + p, res[1]); }
+    }
+    i = Math.max(k, i + 1);
+  }
+  return out;
+}
+function markRanges(el, ranges, cls) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  let pos = 0, ri = 0;
+  for (const node of nodes) {
+    const text = node.nodeValue, start = pos, end = pos + text.length;
+    pos = end;
+    const pieces = [];
+    let cursor = start;
+    while (ri < ranges.length && ranges[ri][0] < end) {
+      const s = Math.max(ranges[ri][0], start), e = Math.min(ranges[ri][1], end);
+      if (s > cursor) pieces.push([cursor, s, false]);
+      if (e > s) pieces.push([s, e, true]);
+      cursor = Math.max(cursor, e);
+      if (ranges[ri][1] <= end) ri++; else break;
+    }
+    if (!pieces.length) continue;
+    if (cursor < end) pieces.push([cursor, end, false]);
+    const frag = document.createDocumentFragment();
+    for (const [s, e, hit] of pieces) {
+      const t = document.createTextNode(text.slice(s - start, e - start));
+      if (hit) { const span = document.createElement('span'); span.className = cls; span.appendChild(t); frag.appendChild(span); }
+      else frag.appendChild(t);
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+}
+function paintFile(f) {
+  if (!f.rowEls || f.painted) return;
+  f.painted = true;
+  const html = new Array(f.rows.length).fill(null);
+  if (window.hljs && f.lang && f.rows.length <= 6000) {
+    f.hunks.forEach((h, hi) => {
+      const rows = f.rows.slice(f.hunkStart[hi], f.hunkStart[hi] + h.rows.length);
+      const newSide = rows.filter(r => r.t !== '-'), oldSide = rows.filter(r => r.t !== '+');
+      const nh = hlLines(newSide.map(r => stripCR(r.s)), f.lang), oh = hlLines(oldSide.map(r => stripCR(r.s)), f.lang);
+      if (nh) newSide.forEach((r, k) => { html[r.i] = nh[k]; });
+      if (oh) oldSide.forEach((r, k) => { if (r.t === '-') html[r.i] = oh[k]; });
+    });
+  }
+  const words = pairChanges(f);
+  for (const r of f.rows) {
+    const ranges = words.get(r.i);
+    if (html[r.i] == null && !ranges) continue;
+    const src = f.rowEls[r.i].querySelector('.src');
+    src.innerHTML = html[r.i] != null ? html[r.i] : esc(stripCR(r.s));
+    if (ranges) markRanges(src, ranges, 'wd');
+  }
+}
+window.addEventListener('hljs-ready', () => {
+  for (const f of S.files) if (f.painted) { f.painted = false; paintFile(f); }
+});
+
+// ---------------------------------------------------------------- threads, walkthroughs and the selection bar
+function placeExtras(path) {
+  if (path == null || !S.byPath[path]) return placeGlobalThreads();
+  const f = S.byPath[path], sec = fileSec(path);
+  if (!sec) return;
+  const holder = sec.querySelector('.file-threads');
+  $$('tr.thread-row, tr.anno-row, tr.anno-head', sec).forEach(tr => tr.remove());
+  $$(':scope > .thread', holder).forEach(el => el.remove());
+  $$('tr.r.ann', sec).forEach(tr => tr.classList.remove('ann', 'ann-0', 'ann-1'));
+  if (f.rowEls) annosOf(path).forEach(a => placeAnno(f, a));
+  for (const t of threadsOf(path)) {
+    const el = threadEl(t);
+    const loc = t.anchor && f.rowEls ? locate(t, f) : null;
+    if (loc) {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      tr.className = 'thread-row';
+      tr.dataset.thread = t.id;
+      td.colSpan = 3;
+      td.appendChild(el);
+      tr.appendChild(td);
+      insertAfterRow(f, loc.end, tr);
+      el.classList.remove('outdated');
+    } else if (!t.anchor || f.rowEls) {
+      el.classList.toggle('outdated', !!t.anchor);
+      holder.appendChild(el);
+    }
+  }
+  if (S.sel && S.sel.path === path) placeActbar();
+}
+function insertAfterRow(f, i, tr) {
+  let ref = f.rowEls[i];
+  while (ref.nextElementSibling && ref.nextElementSibling.matches('tr.thread-row, tr.anno-row, tr.actbar')) ref = ref.nextElementSibling;
+  ref.after(tr);
+}
+function placeGlobalThreads() {
+  const box = $('#global-threads');
+  if (!box) return;
+  const list = Object.values(S.threads).filter(isGlobal).sort((a, b) => (b.overview - a.overview) || byId(a, b));
+  box.innerHTML = '';
+  for (const t of list) box.appendChild(threadEl(t));
+}
+function threadEl(t) {
+  let el = S.threadEls[t.id];
+  if (!el) {
+    el = document.createElement('div');
+    el.dataset.thread = t.id;
+    el.innerHTML = `<div class="th-head"></div><div class="th-msgs"></div><div class="th-foot"></div>
+      <div class="th-compose" hidden><textarea rows="2" placeholder="追问…（Ctrl/⌘+Enter 发送）"></textarea>
+      <div class="row"><label class="chk"><input type="checkbox" class="to-author"> 交给作者回答（下一轮，不用 AI）</label><span class="spacer"></span>
+      <button class="btn xs" data-act="t-cancel">取消</button><button class="btn xs primary" data-act="t-send">发送</button></div></div>`;
+    S.threadEls[t.id] = el;
+  }
+  updateThreadEl(t, el);
+  return el;
+}
+function updateThreadEl(t, el = S.threadEls[t.id]) {
+  if (!el) return false;
+  const keep = ['open', 'outdated'].filter(c => el.classList.contains(c));
+  el.className = ['thread', 'k-' + t.kind, t.resolved ? 'resolved' : '', t.overview ? 'overview' : ''].concat(keep).filter(Boolean).join(' ');
+  el.querySelector('.th-head').innerHTML = threadHeadHTML(t);
+  renderMsgs(el.querySelector('.th-msgs'), t);
+  el.querySelector('.th-foot').innerHTML = threadFootHTML(t);
+  return true;
+}
+function dropThreadEl(id) {
+  const el = S.threadEls[id];
+  if (!el) return;
+  (el.closest('tr.thread-row') || el).remove();
+  delete S.threadEls[id];
+}
+function threadHeadHTML(t) {
+  const kind = t.overview ? '<span class="badge b-ov">📖 整体讲解</span>' : t.kind === 'change' ? '<span class="badge b-change">🚩 要改</span>' : '<span class="badge b-q">💬 提问</span>';
+  let where = '';
+  if (t.file) where = `<a class="where" href="#" data-act="t-goto">${esc(t.file.split('/').pop())} ${esc(t.anchor ? anchorLabel(t) : '（整个文件）')}</a>`;
+  else if (!t.overview) where = '<span class="muted">关于整体改动</span>';
+  const chips = [];
+  if (t.file && !S.byPath[t.file]) chips.push('<span class="chip tiny">文件已不在 diff 里</span>');
+  if (t.askAuthor && t.kind !== 'change') chips.push('<span class="chip tiny c-author">问作者</span>');
+  if (needsAuthor(t)) chips.push('<span class="chip tiny c-pending">等作者处理</span>');
+  else if (t.messages.some(m => m.role === 'author')) chips.push('<span class="chip tiny c-author">作者已回复</span>');
+  if (t.round !== S.round) chips.push(`<span class="chip tiny">第${t.round}轮</span>`);
+  if (t.resolved) chips.push('<span class="chip tiny c-ok">已解决</span>');
+  const first = (t.messages.find(m => m.role === 'user') || {}).text || '';
+  return `${kind}${where}${chips.join('')}${t.resolved ? `<span class="th-sum">${esc(trunc(first, 80))}</span>` : ''}<span class="spacer"></span>
+    ${t.resolved ? '<button class="btn xs ghost" data-act="t-toggle">展开</button>' : ''}<span class="tid">${t.id}</span>`;
+}
+function threadFootHTML(t) {
+  if (t.messages.some(m => m.status === 'pending')) return '<button class="btn xs" data-act="t-stop">■ 停止</button><span class="muted small">AI 正在看代码…</span>';
+  const b = ['<button class="btn xs" data-act="t-followup">↩ 追问</button>'];
+  if (!t.overview) b.push(t.kind === 'change' ? '<button class="btn xs" data-act="t-unflag">取消「要改」</button>' : '<button class="btn xs warn" data-act="t-flag" title="把这条变成修改意见，打回时交给 agent">🚩 这里要改</button>');
+  if (t.kind !== 'change') b.push(t.askAuthor ? '<button class="btn xs" data-act="t-not-author">不用作者回答</button>' : '<button class="btn xs" data-act="t-to-author" title="写代码的 agent 下一轮回答（它知道当时为什么这么写）">转给作者</button>');
+  b.push(t.resolved ? '<button class="btn xs" data-act="t-reopen">重新打开</button>' : `<button class="btn xs ok" data-act="t-resolve">✓ ${t.kind === 'change' ? '已解决' : '懂了'}</button>`);
+  b.push('<span class="spacer"></span><button class="btn xs ghost" data-act="t-delete" title="删除">🗑</button>');
+  return b.join('');
+}
+function renderMsgs(box, t) {
+  const seen = new Set();
+  let prev = null;
+  for (const m of t.messages) {
+    seen.add(m.id);
+    const sig = [m.status, m.text.length, (m.tools || []).length, m.error || ''].join('|');
+    let el = box.querySelector(`[data-m="${m.id}"]`);
+    if (!el) {
+      el = document.createElement('div');
+      el.dataset.m = m.id;
+      if (prev) prev.after(el); else box.prepend(el);
+    }
+    if (el._sig !== sig) { el.className = 'msg r-' + m.role; el.innerHTML = msgHTML(m, t); el._sig = sig; }
+    prev = el;
+  }
+  $$('[data-m]', box).forEach(el => { if (!seen.has(el.dataset.m)) el.remove(); });
+}
+function msgHTML(m, t) {
+  const who = m.role === 'user' ? '你' : m.role === 'ai' ? '🤖 解释器' : '✍️ 作者（写代码的 agent）';
+  const meta = [];
+  if (m.round && m.round !== t.round) meta.push('第' + m.round + '轮');
+  if (m.role === 'ai' && m.model) meta.push(m.model);
+  let html = `<div class="who">${who}${meta.length ? ` <span class="muted">· ${esc(meta.join(' · '))}</span>` : ''}</div>`;
+  if (m.role === 'user') html += `<div class="plain">${esc(m.text)}</div>`;
+  else if (m.role === 'ai' && m.status === 'done' && m.round && m.round < S.round) return `<details class="old-ai"><summary>${who} · 第${m.round}轮的回答（点开看）</summary><div class="md">${md(m.text, t.file)}</div></details>`;
+  else if (m.text) html += `<div class="md">${md(m.text, t.file)}</div>`;
+  if (m.role === 'ai') {
+    const tools = m.tools || [];
+    if (m.status === 'pending') html += `<div class="pending"><span class="spin"></span> ${m.text ? '写回答中…' : tools.length ? '查阅代码中…' : '思考中…'}${tools.length ? ` <span class="mono small">${esc(tools[tools.length - 1])}</span>` : ''}</div>`;
+    else if (m.status === 'error') html += `<div class="err">❌ ${esc(m.error || '出错了')}</div>`;
+    else if (m.status === 'cancelled') html += '<div class="muted small">已停止</div>';
+    else if (tools.length) html += `<details class="tools"><summary>查阅了 ${tools.length} 处代码</summary>${tools.map(x => `<div class="mono">${esc(x)}</div>`).join('')}</details>`;
+  }
+  return html;
+}
+function placeAnno(f, a) {
+  if (a.hash !== f.hash || a.rowEnd >= f.rows.length) return;  // walkthrough of an older version of this file
+  const head = document.createElement('tr');
+  head.className = 'anno-head';
+  head.dataset.anno = a.id;
+  head.innerHTML = `<td colspan="3">${annoHeadHTML(f, a)}</td>`;
+  f.rowEls[a.rowStart].before(head);
+  if (a.status !== 'done' || S.hideAnno[a.id]) return;
+  a.items.forEach((it, k) => {
+    for (let i = it.from; i <= it.to; i++) if (f.rowEls[i]) f.rowEls[i].classList.add('ann', 'ann-' + (k % 2));
+    const tr = document.createElement('tr');
+    tr.className = 'anno-row';
+    tr.dataset.anno = a.id;
+    tr.innerHTML = `<td colspan="3"><div class="anno-note"><span class="anno-rng">${esc(rangeLabel(f, it.from, it.to))}</span><div class="md">${md(it.note, f.path)}</div></div></td>`;
+    insertAfterRow(f, it.to, tr);
+  });
+}
+function annoHeadHTML(f, a) {
+  let s = `<div class="anno-bar"><span>📖 逐行讲解 <b>${esc(rangeLabel(f, a.rowStart, a.rowEnd))}</b></span>`;
+  const tools = a.tools || [];
+  if (a.status === 'pending') s += `<span class="spin"></span><span class="muted small">${tools.length ? esc(tools[tools.length - 1]) : '生成中…（通常要半分钟左右）'}</span><span class="spacer"></span><button class="btn xs" data-act="anno-cancel">停止</button>`;
+  else if (a.status === 'error') s += `<span class="err-inline">${esc(a.error || '出错了')}</span><span class="spacer"></span><button class="btn xs" data-act="anno-redo">重试</button><button class="btn xs ghost" data-act="anno-delete">删除</button>`;
+  else if (a.status === 'cancelled') s += '<span class="muted small">已停止</span><span class="spacer"></span><button class="btn xs" data-act="anno-redo">重新生成</button><button class="btn xs ghost" data-act="anno-delete">删除</button>';
+  else s += `${a.unstructured ? '<span class="muted small">（没按格式返回，显示原文）</span>' : ''}<span class="spacer"></span><button class="btn xs" data-act="anno-toggle">${S.hideAnno[a.id] ? '显示' : '隐藏'}</button><button class="btn xs" data-act="anno-redo">重新生成</button><button class="btn xs ghost" data-act="anno-delete">删除</button>`;
+  return s + '</div>';
+}
+function updateAnnoHead(a) {
+  const tr = $(`tr.anno-head[data-anno="${a.id}"]`);
+  if (tr && S.byPath[a.file]) tr.firstElementChild.innerHTML = annoHeadHTML(S.byPath[a.file], a);
+}
+
+function selectRow(path, i, extend) {
+  if (extend && S.sel && S.sel.path === path) {
+    S.sel.a = Math.min(S.sel.anchor, i);
+    S.sel.b = Math.max(S.sel.anchor, i);
+  } else {
+    S.sel = {path, anchor: i, a: i, b: i};
+  }
+  if (S.sel.b - S.sel.a >= 400) S.sel.b = S.sel.a + 399;
+  S.composer = null;
+  paintSelection();
+  placeActbar();
+}
+function paintSelection() {
+  $$('tr.r.sel').forEach(tr => tr.classList.remove('sel'));
+  if (!S.sel) return;
+  const f = S.byPath[S.sel.path];
+  for (let i = S.sel.a; i <= S.sel.b; i++) if (f.rowEls[i]) f.rowEls[i].classList.add('sel');
+}
+function clearSel() {
+  S.sel = null;
+  S.composer = null;
+  paintSelection();
+  if (S.actbar) S.actbar.remove();
+}
+function placeActbar() {
+  const f = S.sel && S.byPath[S.sel.path];
+  if (!f || !f.rowEls) return;
+  if (!S.actbar) {
+    S.actbar = document.createElement('tr');
+    S.actbar.className = 'actbar';
+    S.actbar.innerHTML = '<td colspan="3"></td>';
+  }
+  const td = S.actbar.firstElementChild;
+  if (S.composer) {
+    if (td.dataset.mode !== S.composer.mode) {
+      td.innerHTML = composerHTML(S.composer.mode, f);
+      td.dataset.mode = S.composer.mode;
+      setTimeout(() => { const ta = td.querySelector('textarea'); if (ta) ta.focus(); }, 0);
+    }
+  } else {
+    td.innerHTML = actbarHTML(f);
+    td.dataset.mode = '';
+  }
+  f.rowEls[S.sel.b].after(S.actbar);
+}
+function actbarHTML(f) {
+  const ai = S.ai.available;
+  return `<div class="bar"><span class="muted small">已选 <b>${esc(rangeLabel(f, S.sel.a, S.sel.b))}</b></span>
+    ${ai ? '<button class="btn sm ai" data-act="sel-explain" title="快捷键 e">💬 这段在干嘛？</button>' : ''}
+    <button class="btn sm" data-act="sel-ask" title="快捷键 q">❓ 提问…</button>
+    ${ai ? '<button class="btn sm" data-act="sel-annotate" title="快捷键 a">📖 逐行讲解</button>' : ''}
+    <button class="btn sm warn" data-act="sel-change" title="快捷键 f">🚩 这里要改…</button>
+    <span class="spacer"></span><span class="muted small hide-narrow">Shift+点行号扩选 · Esc 取消</span>
+    <button class="btn xs ghost" data-act="sel-clear" title="Esc">✕</button></div>`;
+}
+function chipsHTML(list) {
+  return `<div class="chips">${list.map(c => `<button class="chip-btn" data-act="chip">${esc(c)}</button>`).join('')}</div>`;
+}
+function authorBox(checked) {
+  return `<label class="chk"><input type="checkbox" class="to-author" ${checked || !S.ai.available ? 'checked' : ''} ${S.ai.available ? '' : 'disabled'}> 交给作者回答（下一轮，不用 AI）</label>`;
+}
+function composerHTML(mode, f) {
+  const change = mode === 'change';
+  return `<div class="composer ${change ? 'is-change' : ''}">
+    <div class="cmp-title">${change ? '🚩 这段要怎么改？（打回时交给 agent）' : '❓ 关于 ' + esc(rangeLabel(f, S.sel.a, S.sel.b)) + ' 的问题'}</div>
+    ${chipsHTML(change ? CHANGE_CHIPS : ASK_CHIPS)}
+    <textarea rows="3" placeholder="${change ? '写下你希望的改法…' : '你的问题…'}（Ctrl/⌘+Enter 发送）"></textarea>
+    <div class="row">${change ? '' : authorBox(false)}<span class="spacer"></span>
+      <button class="btn sm" data-act="cmp-cancel">取消</button>
+      <button class="btn sm primary" data-act="cmp-send">${change ? '记下修改意见' : '发送'}</button></div></div>`;
+}
+
+// ---------------------------------------------------------------- actions
+function ingestThread(t, focus) {
+  const known = !!S.threadEls[t.id];
+  S.threads[t.id] = t;
+  if (known && (isGlobal(t) || S.threadEls[t.id].isConnected)) updateThreadEl(t); else placeExtras(isGlobal(t) ? null : t.file);
+  renderSidebar();
+  S.jobs = Math.max(S.jobs, t.messages.some(m => m.status === 'pending') ? 1 : 0);
+  if (focus && S.threadEls[t.id]) S.threadEls[t.id].scrollIntoView({block: 'nearest', behavior: 'smooth'});
+}
+async function askSelection(question, ai, askAuthor, kind) {
+  const f = S.byPath[S.sel.path];
+  const res = await api('POST', '/api/ask', {file: f.path, anchor: makeAnchor(f, S.sel.a, S.sel.b), question, ai, askAuthor: !!askAuthor, kind: kind || 'question'});
+  clearSel();
+  ingestThread(res.thread, true);
+}
+function openComposer(mode) {
+  if (!S.sel) return;
+  S.composer = {mode};
+  placeActbar();
+}
+async function sendComposer() {
+  const box = S.actbar.firstElementChild;
+  const text = box.querySelector('textarea').value.trim();
+  if (S.composer.mode === 'change') {
+    if (!text) { toast('写一句你希望怎么改'); return; }
+    return askSelection(text, false, false, 'change');
+  }
+  const toAuthor = box.querySelector('.to-author').checked;
+  if (toAuthor && !text) { toast('写下你想问作者的问题'); return; }
+  return askSelection(text || DEFAULT_Q, !toAuthor, toAuthor, 'question');
+}
+function fillChip(el) {
+  const box = el.closest('.composer, .modal, .fcomposer');
+  const ta = box && box.querySelector('textarea');
+  if (!ta) return;
+  ta.value = ta.value.trim() ? ta.value.trim() + '；' + el.textContent : el.textContent;
+  ta.focus();
+}
+async function annotateRange(path, a, b) {
+  if (!S.ai.available) { toast('AI 不可用'); return; }
+  if (b - a + 1 > 400) { toast('一次最多逐行讲解 400 行：选一段（点行号，Shift+点击扩展），或者在 hunk 标题上点「逐行讲解这段」'); return; }
+  const res = await api('POST', '/api/annotate', {file: path, rowStart: a, rowEnd: b});
+  for (const [id, x] of Object.entries(S.annos)) if (x.file === path && !(x.rowEnd < a || x.rowStart > b)) delete S.annos[id];
+  S.annos[res.annotation.id] = res.annotation;
+  S.jobs = Math.max(S.jobs, 1);
+  clearSel();
+  setFold(path, false);
+  placeExtras(path);
+}
+function openFileComposer(f, mode) {
+  const sec = fileSec(f.path);
+  setFold(f.path, false);
+  const old = sec.querySelector('.fcomposer');
+  if (old) old.remove();
+  const box = document.createElement('div');
+  box.className = 'fcomposer composer' + (mode === 'rewrite' ? ' is-change' : '');
+  box.dataset.mode = mode;
+  box.innerHTML = `<div class="cmp-title">${mode === 'rewrite' ? '✗ 为什么这个文件需要重写？（可选，会交给 agent）' : '❓ 关于整个文件的问题'}</div>
+    ${chipsHTML(mode === 'rewrite' ? REWRITE_CHIPS : ASK_CHIPS)}
+    <textarea rows="2" placeholder="${mode === 'rewrite' ? '比如：抽象太多，直接写成一个函数就行' : '你的问题…'}（Ctrl/⌘+Enter 发送）"></textarea>
+    <div class="row">${mode === 'rewrite' ? '' : authorBox(false)}<span class="spacer"></span>
+      <button class="btn sm" data-act="fc-cancel">取消</button>
+      <button class="btn sm primary" data-act="fc-send">${mode === 'rewrite' ? '标记「需重写」' : '发送'}</button></div>`;
+  sec.querySelector('.file-threads').prepend(box);
+  box.querySelector('textarea').focus();
+}
+async function sendFileComposer(el) {
+  const box = el.closest('.fcomposer'), f = fileOf(box);
+  const text = box.querySelector('textarea').value.trim();
+  if (box.dataset.mode === 'rewrite') { box.remove(); return setVerdict(f, 'rewrite', text); }
+  const toAuthor = box.querySelector('.to-author').checked;
+  if (toAuthor && !text) { toast('写下你想问作者的问题'); return; }
+  const res = await api('POST', '/api/ask', {file: f.path, anchor: null, question: text || '这个文件的改动整体在做什么？', ai: !toAuthor, askAuthor: toAuthor});
+  box.remove();
+  ingestThread(res.thread, true);
+}
+async function setVerdict(f, state, comment) {
+  const res = await api('POST', '/api/verdict', {file: f.path, state, comment: comment || ''});
+  S.verdicts = res.verdicts;
+  if (res.thread) ingestThread(res.thread, false);
+  refreshFileHead(f);
+  renderSidebar();
+  if (state === 'ok') {
+    setFold(f.path, true);
+    const next = S.files.slice(f.idx + 1).find(x => !S.verdicts[x.path]);
+    if (next) gotoFile(next.path);
+  }
+}
+async function overview() {
+  const existing = Object.values(S.threads).find(t => t.overview);
+  if (existing) { const el = threadEl(existing); el.scrollIntoView({block: 'start', behavior: 'smooth'}); return; }
+  const res = await api('POST', '/api/ask', {file: null, overview: true, ai: true, question: '请整体讲解一下这次改动：做了什么、为什么，以及推荐的阅读顺序。'});
+  ingestThread(res.thread, true);
+}
+async function globalAsk(ai) {
+  const ta = $('.ask-global textarea');
+  const q = ta.value.trim();
+  if (!q) { ta.focus(); return; }
+  const res = await api('POST', '/api/ask', {file: null, question: q, ai, askAuthor: !ai});
+  ta.value = '';
+  ingestThread(res.thread, true);
+}
+const threadIdOf = el => el.closest('[data-thread]').dataset.thread;
+async function threadUpdate(el, patch) {
+  const id = threadIdOf(el);
+  const res = await api('POST', '/api/thread', Object.assign({id}, patch));
+  if (patch.delete) {
+    const t = S.threads[id];
+    delete S.threads[id];
+    dropThreadEl(id);
+    if (t) placeExtras(isGlobal(t) ? null : t.file);
+    renderSidebar();
+  } else ingestThread(res.thread);
+}
+function openFollowup(el) {
+  const th = el.closest('.thread'), box = th.querySelector('.th-compose'), t = S.threads[th.dataset.thread];
+  box.hidden = false;
+  const cb = box.querySelector('.to-author');
+  cb.checked = !S.ai.available || t.kind === 'change' || !!t.askAuthor;
+  cb.disabled = !S.ai.available;
+  box.querySelector('textarea').focus();
+}
+async function sendFollowup(el) {
+  const th = el.closest('.thread'), box = th.querySelector('.th-compose'), ta = box.querySelector('textarea');
+  const q = ta.value.trim();
+  if (!q) { ta.focus(); return; }
+  const toAuthor = box.querySelector('.to-author').checked;
+  const body = {threadId: th.dataset.thread, question: q, ai: !toAuthor};
+  if (toAuthor) body.askAuthor = true;
+  const res = await api('POST', '/api/ask', body);
+  ta.value = '';
+  box.hidden = true;
+  ingestThread(res.thread);
+}
+async function stopThread(el) {
+  const t = S.threads[threadIdOf(el)];
+  const m = t && t.messages.find(x => x.status === 'pending');
+  if (m) await api('POST', '/api/cancel', {threadId: t.id, msgId: m.id});
+}
+const annoIdOf = el => el.closest('[data-anno]').dataset.anno;
+function gotoFile(path) {
+  const sec = fileSec(path);
+  if (!sec) return;
+  document.body.classList.remove('side-open');
+  window.scrollTo({top: sec.getBoundingClientRect().top + window.scrollY - 60, behavior: 'smooth'});
+}
+function gotoRelFile(step) {
+  const secs = $$('section.file');
+  if (!secs.length) return;
+  let cur = secs.findIndex(s => s.getBoundingClientRect().top > 70);
+  cur = cur < 0 ? secs.length : cur;
+  const target = step > 0 ? secs[Math.min(secs.length - 1, cur)] : secs[Math.max(0, cur - 2)];
+  gotoFile(target.dataset.path);
+}
+function flash(el) {
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+}
+function jumpTo(path, side, line) {
+  const f = S.byPath[path];
+  if (!f) { toast('这个文件不在 diff 里'); return; }
+  const r = f.rows.find(x => side === 'old' ? x.o === line : x.n === line);
+  if (!r) { viewFile(path, side, line); return; }
+  setFold(path, false);
+  if (!f.rowEls) { buildRows(f); placeExtras(path); }
+  const el = f.rowEls[r.i];
+  el.scrollIntoView({block: 'center', behavior: 'smooth'});
+  flash(el);
+}
+async function viewFile(path, side, line) {
+  const f = S.byPath[path];
+  side = side || (f && f.status === 'D' ? 'old' : 'new');
+  const data = await api('GET', `/api/file?path=${encodeURIComponent(path)}&side=${side}`);
+  const lines = data.text.replace(/\r\n/g, '\n').split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  const changed = new Set(f ? f.rows.filter(r => side === 'new' ? r.t === '+' : r.t === '-').map(r => side === 'new' ? r.n : r.o) : []);
+  const hl = f && lines.length <= 20000 ? hlLines(lines, f.lang) : null;
+  const cls = side === 'new' ? 'add' : 'del';
+  const body = lines.map((l, k) => `<tr class="${changed.has(k + 1) ? cls : ''}" id="vf-${k + 1}"><td class="ln">${k + 1}</td><td class="code"><span class="src">${hl ? hl[k] : esc(l)}</span></td></tr>`).join('');
+  const other = side === 'new' ? (f && f.status !== 'A' && S.repo.isGit ? 'old' : null) : (f && f.status !== 'D' ? 'new' : null);
+  openModal(`<div class="vf-head"><b class="mono">${esc(path)}</b><span class="chip">${side === 'new' ? '新版本' : '旧版本'}</span>
+      <span class="muted small">${changed.size ? '高亮的是改动过的行' : ''}</span>
+      ${other ? `<button class="btn xs" data-act="view-side" data-path="${esc(path)}" data-side="${other}">看${other === 'new' ? '新' : '旧'}版本</button>` : ''}
+      <span class="spacer"></span><button class="btn xs" data-act="modal-close">关闭 (Esc)</button></div>
+    <div class="vf-body"><table class="diff vf"><colgroup><col class="c-ln"><col></colgroup>${body}</table></div>`, 'wide');
+  const target = line || Math.min.apply(null, changed.size ? Array.from(changed) : [0]);
+  const row = target && document.getElementById('vf-' + target);
+  if (row) { row.scrollIntoView({block: 'center'}); if (line) flash(row); }
+}
+function openSubmit() {
+  if ((S.rounds[S.round] || {}).submitted) { toast(`第 ${S.round} 轮已经提交了，等 agent 推送下一轮`); return; }
+  const ts = Object.values(S.threads);
+  const changes = ts.filter(t => t.kind === 'change' && needsAuthor(t));
+  const questions = ts.filter(t => t.kind !== 'change' && needsAuthor(t));
+  const bad = S.files.filter(f => (S.verdicts[f.path] || {}).state === 'rewrite');
+  const ok = S.files.filter(f => (S.verdicts[f.path] || {}).state === 'ok');
+  const discussed = new Set(ts.map(t => t.file));
+  const unseen = S.files.filter(f => !S.verdicts[f.path] && !discussed.has(f.path));
+  const pending = ts.some(t => t.messages.some(m => m.status === 'pending'));
+  const def = changes.length || bad.length ? 'changes' : questions.length ? 'comment' : 'approve';
+  const opt = (v, title, desc) => `<label class="vopt"><input type="radio" name="verdict" value="${v}" ${v === def ? 'checked' : ''}><span><b>${title}</b><span class="muted small">${desc}</span></span></label>`;
+  openModal(`<h2>提交第 ${S.round} 轮 review</h2>
+    <div class="verdicts">
+      ${opt('approve', '✅ 通过', '看懂了，接受这次改动')}
+      ${opt('comment', '💬 只提问', '把问题交给作者回答，先不要求改代码')}
+      ${opt('changes', '↩️ 打回修改', '按我的意见改；整体太挫看不懂，就在下面写「重写」')}
+    </div>
+    <textarea id="overall" rows="4" placeholder="整体意见（可选）。比如：整体太绕了，用更直接的方式重写数据加载部分。"></textarea>
+    ${chipsHTML(OVERALL_CHIPS)}
+    <div class="sum">
+      <div>🚩 修改意见 <b>${changes.length}</b> · ❓ 给作者的问题 <b>${questions.length}</b> · ✗ 需重写的文件 <b>${bad.length}</b></div>
+      <div>✓ 看懂的文件 ${ok.length}/${S.files.length}${unseen.length ? ` · <span class="warn">还有 ${unseen.length} 个文件没看</span>` : ''}</div>
+      ${pending ? '<div class="warn">还有 AI 回答在生成中（不影响提交）</div>' : ''}
+    </div>
+    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">取消</button><button class="btn primary" data-act="submit-review">提交</button></div>`, '', true);
+  $('#overall').value = S.draftComment || '';
+  $('#overall').focus();
+}
+async function submitReview() {
+  const verdict = ($('input[name="verdict"]:checked') || {}).value;
+  const comment = $('#overall').value.trim();
+  const ts = Object.values(S.threads);
+  const items = ts.filter(t => t.kind === 'change' && needsAuthor(t)).length + S.files.filter(f => (S.verdicts[f.path] || {}).state === 'rewrite').length;
+  if (verdict === 'approve' && items && !confirm(`还有 ${items} 条修改意见没处理，确定直接通过？`)) return;
+  if (verdict === 'changes' && !items && !comment && !confirm('没有写任何修改意见，确定打回？（agent 会不知道改什么）')) return;
+  const res = await api('POST', '/api/submit', {verdict, comment});
+  S.draftComment = '';
+  S.rounds[S.round] = Object.assign({}, S.rounds[S.round], {submitted: {verdict, comment, at: Date.now() / 1000}});
+  renderHeader();
+  renderBanners();
+  const msg = verdict === 'approve' ? '已通过 ✅ agent 会收到结果。可以关掉这个页面了。'
+    : verdict === 'comment' ? '问题已经交给作者。agent 回答完会推送下一轮，这个页面会自动刷新。'
+    : '已打回 ↩️ agent 会按你的意见修改，改完推送下一轮，这个页面会自动刷新。';
+  openModal(`<h2>第 ${res.round} 轮已提交</h2><p>${msg}</p>
+    <details><summary>交给 agent 的内容</summary><div class="md review-md">${md(res.markdown)}</div></details>
+    <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">好</button></div>`);
+}
+async function showReview(round) {
+  const r = await api('GET', '/api/review?round=' + round);
+  openModal(`<h2>第 ${round} 轮提交的内容</h2><div class="md review-md">${md(r.markdown)}</div>
+    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">关闭</button></div>`, 'wide');
+}
+function openSettings() {
+  const s = S.settings;
+  const models = MODELS.some(m => m[0] === s.model) ? MODELS : MODELS.concat([[s.model, s.model]]);
+  const sel = (id, list, value) => `<select id="${id}">${list.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  openModal(`<h2>设置</h2>
+    <label class="field">解释用的模型 ${sel('set-model', models, s.model || '')}</label>
+    <label class="field">思考力度 ${sel('set-effort', [['', '默认'], ['low', '低（更快）'], ['medium', '中'], ['high', '高（更细）']], s.effort || '')}</label>
+    <label class="field">解释用的语言 ${sel('set-lang', [['zh', '中文'], ['en', 'English']], s.lang || 'zh')}</label>
+    <div class="muted small">AI：${S.ai.available ? esc(S.ai.version || 'claude') : '不可用 — ' + esc(S.ai.error || '')}<br>
+      服务：${esc(S.repo.host || '')} · ${esc(S.listen.mode || '')} · ${esc(S.repo.root || '')}</div>
+    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">取消</button><button class="btn primary" data-act="save-settings">保存</button></div>`, '', true);
+}
+function showHelp() {
+  openModal(`<h2>怎么用</h2>
+    <ol class="help">
+      <li><b>先看全局。</b>顶部「作者说明」是写代码的 agent 自己写的；点右上角「📖 整体讲解」让 AI 带你通读一遍。</li>
+      <li><b>看不懂就问。</b>点行号选中一行（Shift+点击或拖动可以选多行），然后点「💬 这段在干嘛？」或「❓ 提问…」。回答会贴在代码下面，还可以接着追问。</li>
+      <li><b>逐行讲解。</b>在 hunk 标题上点「📖 逐行讲解这段」，每几行配一句解释。</li>
+      <li><b>提意见。</b>选中代码后点「🚩 这里要改…」；整个文件不行，就点文件头的「✗ 需重写」。</li>
+      <li><b>问作者。</b>提问时勾选「交给作者回答」，或者在 AI 的回答下面点「转给作者」。写代码的 agent 知道当时为什么这么写，它会在下一轮回答。</li>
+      <li><b>提交。</b>右上角「提交 review」，选 ✅ 通过 / 💬 只提问 / ↩️ 打回修改；整体太挫看不懂，就写「重写」。agent 改完会推送下一轮，页面自动刷新。</li>
+    </ol>
+    <h3>快捷键</h3>
+    <table class="keys">
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>下一个 / 上一个文件</td></tr>
+      <tr><td><kbd>e</kbd></td><td>解释选中的行</td></tr>
+      <tr><td><kbd>q</kbd></td><td>对选中的行提问</td></tr>
+      <tr><td><kbd>a</kbd></td><td>逐行讲解选中的行</td></tr>
+      <tr><td><kbd>f</kbd></td><td>对选中的行提修改意见</td></tr>
+      <tr><td><kbd>Ctrl/⌘</kbd> + <kbd>Enter</kbd></td><td>发送</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>取消选择 / 关闭弹窗</td></tr>
+    </table>
+    <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">好</button></div>`);
+}
+function toggleTheme() {
+  const cur = document.documentElement.dataset.theme;
+  const dark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('dr-theme', dark ? 'light' : 'dark'); } catch (e) { /* storage blocked */ }
+}
+function openModal(html, cls, sticky) {
+  const m = $('#modal');
+  m.innerHTML = `<div class="modal ${cls || ''}" role="dialog" aria-modal="true">${html}</div>`;
+  m.dataset.sticky = sticky ? '1' : '';
+  m.hidden = false;
+}
+function closeModal() {
+  const m = $('#modal');
+  m.hidden = true;
+  m.innerHTML = '';
+}
+function toast(msg, kind) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind || 'err');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), kind === 'ok' ? 2500 : 6000);
+}
+
+const ACTIONS = {
+  'toggle-side': () => document.body.classList.toggle('side-open'),
+  'goto-file': el => gotoFile(el.dataset.path),
+  'fold': el => { const sec = el.closest('section.file'); setFold(sec.dataset.path, !sec.classList.contains('folded')); },
+  'overview': () => overview(),
+  'help': () => showHelp(),
+  'settings': () => openSettings(),
+  'theme': () => toggleTheme(),
+  'open-submit': () => openSubmit(),
+  'submit-review': () => submitReview(),
+  'modal-close': () => closeModal(),
+  'show-review': el => showReview(+el.dataset.round),
+  'dismiss-banner': () => { S.newRoundBanner = null; renderBanners(); },
+  'save-settings': async () => {
+    const res = await api('POST', '/api/settings', {model: $('#set-model').value, effort: $('#set-effort').value, lang: $('#set-lang').value});
+    S.settings = res.settings;
+    closeModal();
+    toast('已保存', 'ok');
+  },
+  'sel-explain': () => askSelection(DEFAULT_Q, true, false, 'question'),
+  'sel-ask': () => openComposer('ask'),
+  'sel-change': () => openComposer('change'),
+  'sel-annotate': () => annotateRange(S.sel.path, S.sel.a, S.sel.b),
+  'sel-clear': () => clearSel(),
+  'cmp-cancel': () => { S.composer = null; placeActbar(); },
+  'cmp-send': () => sendComposer(),
+  'chip': el => fillChip(el),
+  'annotate-file': el => { const f = fileOf(el); return annotateRange(f.path, 0, f.rows.length - 1); },
+  'annotate-hunk': el => { const f = fileOf(el), hi = +el.dataset.h; return annotateRange(f.path, f.hunkStart[hi], f.hunkStart[hi] + f.hunks[hi].rows.length - 1); },
+  'ask-file': el => openFileComposer(fileOf(el), 'ask'),
+  'view-file': el => viewFile(fileOf(el).path),
+  'view-side': el => viewFile(el.dataset.path, el.dataset.side),
+  'verdict-ok': el => { const f = fileOf(el); return setVerdict(f, (S.verdicts[f.path] || {}).state === 'ok' ? '' : 'ok'); },
+  'verdict-bad': el => { const f = fileOf(el); return (S.verdicts[f.path] || {}).state === 'rewrite' ? setVerdict(f, '') : openFileComposer(f, 'rewrite'); },
+  'fc-send': el => sendFileComposer(el),
+  'fc-cancel': el => el.closest('.fcomposer').remove(),
+  'global-ask-ai': () => globalAsk(true),
+  'global-ask-author': () => globalAsk(false),
+  't-followup': el => openFollowup(el),
+  't-send': el => sendFollowup(el),
+  't-cancel': el => { el.closest('.th-compose').hidden = true; },
+  't-resolve': el => threadUpdate(el, {resolved: true}),
+  't-reopen': el => threadUpdate(el, {resolved: false}),
+  't-flag': el => threadUpdate(el, {kind: 'change'}),
+  't-unflag': el => threadUpdate(el, {kind: 'question'}),
+  't-to-author': el => threadUpdate(el, {askAuthor: true}),
+  't-not-author': el => threadUpdate(el, {askAuthor: false}),
+  't-delete': el => confirm('删除这个讨论？') && threadUpdate(el, {delete: true}),
+  't-stop': el => stopThread(el),
+  't-toggle': el => el.closest('.thread').classList.toggle('open'),
+  't-goto': el => { const t = S.threads[threadIdOf(el)]; if (t && t.anchor && S.byPath[t.file] && S.byPath[t.file].rowEls) { const loc = locate(t, S.byPath[t.file]); if (loc) { const r = S.byPath[t.file].rowEls[loc.start]; r.scrollIntoView({block: 'center', behavior: 'smooth'}); flash(r); return; } } if (t && t.file) gotoFile(t.file); },
+  'anno-cancel': el => api('POST', '/api/cancel', {annoId: annoIdOf(el)}),
+  'anno-delete': async el => { const id = annoIdOf(el), a = S.annos[id]; await api('POST', '/api/annotation', {id, delete: true}); delete S.annos[id]; if (a) placeExtras(a.file); },
+  'anno-toggle': el => { const id = annoIdOf(el); S.hideAnno[id] = !S.hideAnno[id]; placeExtras(S.annos[id].file); },
+  'anno-redo': el => { const a = S.annos[annoIdOf(el)]; return annotateRange(a.file, a.rowStart, a.rowEnd); },
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el && ACTIONS[el.dataset.act]) {
+    e.preventDefault();
+    Promise.resolve().then(() => ACTIONS[el.dataset.act](el, e)).catch(err => toast(err.message || String(err)));
+    return;
+  }
+  const ref = e.target.closest('a.lref');
+  if (ref) {
+    e.preventDefault();
+    closeModal();
+    jumpTo(ref.dataset.file, ref.dataset.side, +ref.dataset.line);
+  }
+});
+let dragging = null;
+$('#files').addEventListener('mousedown', e => {
+  const ln = e.target.closest('td.ln[data-i]');
+  if (!ln || e.button !== 0) return;
+  e.preventDefault();
+  dragging = ln.closest('section.file').dataset.path;
+  selectRow(dragging, +ln.dataset.i, e.shiftKey);
+});
+$('#files').addEventListener('mouseover', e => {
+  if (!dragging) return;
+  const ln = e.target.closest('td.ln[data-i]');
+  if (ln && ln.closest('section.file').dataset.path === dragging) selectRow(dragging, +ln.dataset.i, true);
+});
+document.addEventListener('mouseup', () => { dragging = null; });
+$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && !e.currentTarget.dataset.sticky) closeModal(); });
+$('#modal').addEventListener('input', e => { if (e.target.id === 'overall') S.draftComment = e.target.value; });
+$('#filter').addEventListener('input', renderSidebar);
+document.addEventListener('keydown', e => {
+  const typing = e.target.matches && e.target.matches('input, textarea, select');
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && typing) {
+    const box = e.target.closest('.composer, .th-compose, .ask-global, .modal');
+    const btn = box && box.querySelector('.btn.primary');
+    if (btn) { e.preventDefault(); btn.click(); }
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (!$('#modal').hidden) { if (!$('#modal').dataset.sticky || confirm('关掉这个窗口？')) closeModal(); }
+    else if (typing && e.target.closest('.th-compose')) e.target.closest('.th-compose').hidden = true;
+    else if (typing && e.target.closest('.fcomposer')) e.target.closest('.fcomposer').remove();
+    else clearSel();
+    return;
+  }
+  if (typing || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || !$('#modal').hidden) return;
+  const run = fn => { e.preventDefault(); Promise.resolve().then(fn).catch(err => toast(err.message)); };
+  if (e.key === 'j') run(() => gotoRelFile(1));
+  else if (e.key === 'k') run(() => gotoRelFile(-1));
+  else if (e.key === '?') run(showHelp);
+  else if (S.sel && e.key === 'e' && S.ai.available) run(() => askSelection(DEFAULT_Q, true, false, 'question'));
+  else if (S.sel && e.key === 'q') run(() => openComposer('ask'));
+  else if (S.sel && e.key === 'f') run(() => openComposer('change'));
+  else if (S.sel && e.key === 'a' && S.ai.available) run(() => annotateRange(S.sel.path, S.sel.a, S.sel.b));
+});
+let scrollQueued = false;
+window.addEventListener('scroll', () => {
+  if (scrollQueued) return;
+  scrollQueued = true;
+  requestAnimationFrame(() => { scrollQueued = false; markActive(); });
+}, {passive: true});
+function markActive() {
+  let cur = null;
+  for (const sec of $$('section.file')) { if (sec.getBoundingClientRect().top <= 90) cur = sec; else break; }
+  const path = (cur || $('section.file') || {dataset: {}}).dataset.path;
+  $$('#filelist .fi').forEach(a => a.classList.toggle('active', a.dataset.path === path));
+}
+
+// ---------------------------------------------------------------- small, safe markdown renderer
+const REF_RE = /([\w.\-\/]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,7}):(\d+)(?:[-–](\d+))?|((?:\b[Oo]ld |旧 ?)?)\bL(\d+)(?: ?[-–~] ?L?(\d+))?\b(?! ?-?(?:[Nn]orm|[Ll]oss|[Rr]egulari|[Pp]enalty|[Dd]istance|[Cc]ache|范数|正则|损失|距离|缓存))/g;
+function matchFile(p) {
+  if (S.byPath[p]) return p;
+  const hits = S.files.filter(f => f.path.endsWith('/' + p) || p.endsWith('/' + f.path));
+  return hits.length === 1 ? hits[0].path : null;
+}
+function refify(s, ctx) {
+  return s.replace(REF_RE, (m0, p, l1, e1, pre, l2) => {
+    if (p) {
+      const path = matchFile(p);
+      return path ? `<a class="lref" href="#" data-file="${esc(path)}" data-side="new" data-line="${l1}">${m0}</a>` : m0;
+    }
+    if (!ctx || !S.byPath[ctx]) return m0;
+    return `<a class="lref" href="#" data-file="${esc(ctx)}" data-side="${pre ? 'old' : 'new'}" data-line="${l2}">${m0}</a>`;
+  });
+}
+function inline(s, ctx) {
+  const codes = [];
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
+  s = refify(esc(s), ctx);
+  s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*\w])\*([^*\n]+?)\*(?![*\w])/g, '$1<em>$2</em>');
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s = s.replace(/\n/g, '<br>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, k) => '<code>' + refify(esc(codes[+k]), ctx) + '</code>');
+}
+function codeBlock(code, lang) {
+  const l = (lang || '').toLowerCase();
+  let html = null;
+  if (window.hljs && l && hljs.getLanguage(l)) { try { html = hljs.highlight(code, {language: l, ignoreIllegals: true}).value; } catch (e) { /* plain */ } }
+  if (!html && (l === 'diff' || l === 'patch')) html = code.split('\n').map(x => `<span class="${x[0] === '+' ? 'd-add' : x[0] === '-' ? 'd-del' : ''}">${esc(x)}</span>`).join('\n');
+  return `<pre><code>${html || esc(code)}</code></pre>`;
+}
+function mdList(lines, i, ctx) {
+  let out = '';
+  const stack = [];
+  while (i < lines.length) {
+    const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (!m) {
+      if (stack.length && /^\s{2,}\S/.test(lines[i])) { const extra = inline(lines[i].trim(), ctx); out = out.replace(/<\/li>$/, () => '<br>' + extra + '</li>'); i++; continue; }
+      break;
+    }
+    const indent = m[1].replace(/\t/g, '    ').length, ordered = /\d/.test(m[2]), type = ordered ? 'ol' : 'ul';
+    while (stack.length && indent < stack[stack.length - 1].indent) out += `</${stack.pop().type}>`;
+    if (!stack.length || indent > stack[stack.length - 1].indent) {
+      const start = ordered ? parseInt(m[2], 10) : 1;
+      out += ordered && start !== 1 ? `<ol start="${start}">` : `<${type}>`;
+      stack.push({indent, type});
+    }
+    out += '<li>' + inline(m[3], ctx) + '</li>';
+    i++;
+  }
+  while (stack.length) out += `</${stack.pop().type}>`;
+  return [out, i];
+}
+function mdTable(lines, i, ctx) {
+  const cells = l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  let out = '<div class="tbl"><table><thead><tr>' + cells(lines[i]).map(c => `<th>${inline(c, ctx)}</th>`).join('') + '</tr></thead><tbody>';
+  i += 2;
+  while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { out += '<tr>' + cells(lines[i]).map(c => `<td>${inline(c, ctx)}</td>`).join('') + '</tr>'; i++; }
+  return [out + '</tbody></table></div>', i];
+}
+function md(src, ctx) {
+  const lines = String(src || '').replace(/\r\n?/g, '\n').split('\n');
+  let out = '', para = [], i = 0;
+  const flush = () => { if (para.length) { out += '<p>' + inline(para.join('\n'), ctx) + '</p>'; para = []; } };
+  while (i < lines.length) {
+    const line = lines[i];
+    let m;
+    if ((m = line.match(/^\s*(`{3,}|~{3,})\s*([\w+#.-]*)/))) {
+      flush();
+      const fence = m[1], buf = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(fence)) buf.push(lines[i++]);
+      i++;
+      out += codeBlock(buf.join('\n'), m[2]);
+    } else if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      flush();
+      const lv = Math.min(6, m[1].length + 2);
+      out += `<h${lv}>${inline(m[2], ctx)}</h${lv}>`;
+      i++;
+    } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      flush();
+      out += '<hr>';
+      i++;
+    } else if (/^\s*>/.test(line)) {
+      flush();
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ''));
+      out += '<blockquote>' + md(buf.join('\n'), ctx) + '</blockquote>';
+    } else if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+      flush();
+      const r = mdList(lines, i, ctx);
+      out += r[0];
+      i = r[1];
+    } else if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) {
+      flush();
+      const r = mdTable(lines, i, ctx);
+      out += r[0];
+      i = r[1];
+    } else if (!line.trim()) {
+      flush();
+      i++;
+    } else {
+      para.push(line);
+      i++;
+    }
+  }
+  flush();
+  return out;
+}
+
+// ---------------------------------------------------------------- start
+try { const t = localStorage.getItem('dr-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage blocked */ }
+boot().then(() => setTimeout(poll, 1500)).catch(err => {
+  $('#files').innerHTML = `<div class="banner err">加载失败：${esc(err.message)}</div>`;
+  setTimeout(() => location.reload(), 5000);
+});
+</script>
+</body>
+</html>
