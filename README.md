@@ -53,6 +53,7 @@ Claude 会先写一份「作者说明」，讲清楚这次为什么这么改，�
 | 这里要改 | 选中代码，点「🚩 这里要改…」，写下你希望怎么改 |
 | 整个文件都不行 | 文件标题栏的「✗ 需重写」 |
 | 这个文件没问题 | 文件标题栏的「✓ 看懂了」（会自动折叠，跳到下一个文件） |
+| 切换中文 / English | 右上角的 EN / 中文 按钮（之后 AI 的回答也会改用这个语言） |
 
 「问 AI」和「问作者」有什么区别：AI 会马上回答，但它只看得到代码，「为什么这么写」是它猜的。「问作者」要等下一轮，由写这段代码的 Claude 亲自回答，它知道当时为什么这么写。
 
@@ -86,6 +87,17 @@ ssh -O forward -L 21135:/run/user/<你的uid>/diff-review/current.sock nibi
 - 用 VS Code 或 Cursor 远程开发：启动时加 `--listen tcp`，它们会自动帮你转发端口。
 
 计算节点、排错等更多细节见 [references/remote-clusters.md](references/remote-clusters.md)。
+
+## 更新
+
+skill 本身就是一个 git 仓库（`~/.claude/skills/diff-review`）。改完以后：
+
+1. **自己电脑**：改动 commit 之后 `git push`。其他电脑在 `~/.claude/skills/diff-review` 里 `git pull`。
+2. **集群**：在自己电脑上再跑一次 `~/.claude/skills/diff-review/scripts/install_remote.sh nibi fir`，会把本机最新的文件覆盖过去。集群上不需要能访问 GitHub。
+3. **正在跑的 review 服务**：
+   - 只改了网页（`ui.html`）：刷新浏览器页面就生效。
+   - 改了 `diff_review.py`：先 `stop` 再 `start`，已经打开的页面会自动重新加载。
+4. **Claude 会话**：新开的会话会用新版的 SKILL.md。
 
 ## 不经过 Claude，自己用
 

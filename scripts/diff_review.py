@@ -81,8 +81,9 @@ diff-review shows a git work tree against a base revision. Either
 
 DENIED_PAGE = """<!doctype html><meta charset="utf-8"><title>diff-review</title>
 <body style="font:15px/1.6 system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px">
-<h2>需要 token</h2><p>请打开 <code>diff_review.py start</code> 打印出来的完整链接（带 <code>?token=…</code>）。
-这个页面能让 AI 读你的代码，所以没有 token 不让进。</p></body>"""
+<h2>需要 token · Token required</h2>
+<p>请打开 <code>diff_review.py start</code> 打印出来的完整链接（带 <code>?token=…</code>）。这个页面能让 AI 读你的代码，所以没有 token 不让进。</p>
+<p>Open the full link printed by <code>diff_review.py start</code> (it ends with <code>?token=…</code>). This page lets an AI read your code, so it requires the token.</p></body>"""
 
 
 # ----------------------------------------------------------------------------- small helpers
@@ -488,7 +489,7 @@ class Repo:
             for f in files:
                 name = os.path.basename(f["path"])
                 if any(fnmatch.fnmatch(f["path"], g) or fnmatch.fnmatch(name, g) for g in self.excludes):
-                    skipped.append({"path": f["path"], "reason": "被 --exclude 排除"})
+                    skipped.append({"path": f["path"], "code": "excluded"})
                 else:
                     kept.append(f)
             files = kept
@@ -506,14 +507,13 @@ class Repo:
                 paths.append(entry)
                 continue
             if count_files(os.path.join(self.root, entry), MAX_UNTRACKED_DIR_FILES + 1) > MAX_UNTRACKED_DIR_FILES:
-                skipped.append({"path": entry, "reason": "未跟踪的目录，文件太多（>%d），没有展开；不想看就加进 .gitignore" % MAX_UNTRACKED_DIR_FILES})
+                skipped.append({"path": entry, "code": "big-dir", "n": MAX_UNTRACKED_DIR_FILES})
                 continue
             inner = git(["ls-files", "--others", "--exclude-standard", "-z", "--", entry], self.root)
             paths.extend(p for p in inner.split("\0") if p)
         if len(paths) > MAX_UNTRACKED_FILES:
             extra = paths[MAX_UNTRACKED_FILES:]
-            skipped.append({"path": "另外 %d 个未跟踪文件" % len(extra),
-                            "reason": "未跟踪文件太多（比如 %s）" % extra[0]})
+            skipped.append({"path": "", "code": "too-many", "n": len(extra), "example": extra[0]})
             paths = paths[:MAX_UNTRACKED_FILES]
         return paths, skipped
 
@@ -528,12 +528,12 @@ class Repo:
             else:
                 size = os.path.getsize(full)
                 if size > MAX_TEXT_BYTES:
-                    f["skipped"] = "文件太大（%.1f MB），没有显示内容" % (size / 1048576.0)
+                    f["skipped"] = {"code": "too-large", "mb": round(size / 1048576.0, 1)}
                     return f
                 with open(full, "rb") as fh:
                     data = fh.read()
         except OSError as e:
-            f["skipped"] = "读取失败：%s" % (e.strerror or e)
+            f["skipped"] = {"code": "unreadable", "detail": str(e.strerror or e)}
             return f
         if b"\0" in data[:8192]:
             f["binary"] = True
@@ -637,7 +637,8 @@ truly understand it before accepting it, and they send code back for a rewrite w
 convoluted to understand.
 
 How to answer:
-- Write in {lang} unless the reviewer clearly writes in another language. Keep code identifiers as they are.
+- Write in {lang}: the reviewer picked it with the UI's language switch, so it overrides any other \
+language preference (for example one in CLAUDE.md). Keep code identifiers as they are.
 - Open with a direct one- or two-sentence answer, then give the details. Prefer short paragraphs, \
 bullet lists and small code snippets. No filler, and don't restate the diff.
 - Explain what the code does, why it is (probably) written this way (use the author's notes when \
@@ -695,6 +696,7 @@ def diff_text(f, focus=None, budget=FILE_DIFF_BUDGET, ids=False):
 
 
 def describe_tool(block, root):
+    """What the explainer looked at, as {tool, arg, where}; the UI words it in the reader's language."""
     name, args = block.get("name") or "tool", block.get("input") or {}
 
     def rel(p):
@@ -702,13 +704,13 @@ def describe_tool(block, root):
         return os.path.relpath(p, root) if p.startswith(root + os.sep) else p
 
     if name == "Read":
-        return "读 " + rel(args.get("file_path"))
+        return {"tool": "read", "arg": rel(args.get("file_path"))}
     if name == "Grep":
-        where = rel(args.get("path")) if args.get("path") else ""
-        return "搜 “%s”%s" % (args.get("pattern", ""), (" @ " + where) if where else "")
+        return {"tool": "grep", "arg": str(args.get("pattern", "")),
+                "where": rel(args.get("path")) if args.get("path") else ""}
     if name == "Glob":
-        return "找文件 " + str(args.get("pattern", ""))
-    return name
+        return {"tool": "glob", "arg": str(args.get("pattern", ""))}
+    return {"tool": name, "arg": ""}
 
 
 def find_claude(explicit=None):
@@ -750,16 +752,18 @@ class Explainer:
         self.slots = threading.Semaphore(MAX_PARALLEL_JOBS)
         self.running, self.cancelled = {}, set()
         self.active = 0
-        self.caps, self.error = {}, None
+        self.caps, self.error, self.error_code = {}, None, None
         self.bin, self.version = find_claude(explicit)
         if not self.bin:
-            self.error = "找不到能用的 claude 命令（用 --claude /path/to/claude 或环境变量 DIFF_REVIEW_CLAUDE 指定）"
+            self.error_code = "no-claude"
+            self.error = "no working claude CLI found (pass --claude /path/to/claude or set DIFF_REVIEW_CLAUDE)"
             return
         try:
             help_text = subprocess.run([self.bin, "--help"], env=child_env(), stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT, timeout=60).stdout.decode("utf-8", "replace")
         except (OSError, subprocess.SubprocessError) as e:
-            self.error = "claude --help 失败：%s" % e
+            self.error_code = "help-failed"
+            self.error = "claude --help failed: %s" % e
             return
         for flag in ("--include-partial-messages", "--tools", "--disallowedTools", "--no-session-persistence",
                      "--strict-mcp-config", "--settings", "--effort"):
@@ -773,7 +777,8 @@ class Explainer:
         return bool(self.bin) and not self.error
 
     def describe(self):
-        return {"available": self.ready(), "bin": self.bin, "version": self.version, "error": self.error}
+        return {"available": self.ready(), "bin": self.bin, "version": self.version, "error": self.error,
+                "errorCode": self.error_code}
 
     def command(self, settings):
         caps = self.caps
@@ -839,7 +844,7 @@ class Explainer:
                 self._exec(job)
             except Exception as e:  # never leave a message stuck in "pending"
                 traceback.print_exc()
-                self.app.job_done(job, None, "explainer 出错：%s" % e)
+                self.app.job_done(job, None, self.app.tr("explainer 出错：%s", "explainer error: %s") % e)
             finally:
                 with self.lock:
                     self.active -= 1
@@ -906,7 +911,9 @@ class Explainer:
             return
         if final is None and error is None:
             tail = b"".join(errors).decode("utf-8", "replace").strip()[-1500:]
-            error = "claude 退出了（exit %s）%s" % (proc.returncode, ("：\n" + tail) if tail else "")
+            error = self.app.tr("claude 退出了（exit %s）", "claude exited (exit %s)") % proc.returncode
+            if tail:
+                error += "\n" + tail
         self.app.job_done(job, final, error, cost=cost)
 
 
@@ -1053,6 +1060,13 @@ class App:
             self.store.save(force=True)
             return {"round": rnd, "newRound": started, "unknownReplies": unknown, "stats": self.stats()}
 
+    def tr(self, zh, en):
+        """A message in the language the reviewer picked in the UI."""
+        return en if self.store.data["settings"].get("lang") == "en" else zh
+
+    def ai_unavailable(self):
+        return self.tr("AI 解释不可用：", "AI explanations are unavailable: ") + (self.explainer.error or "?")
+
     def message(self, role, text, **extra):
         msg = {"id": self.store.new_id("m"), "role": role, "text": text, "ts": now(),
                "round": self.store.data["round"]}
@@ -1103,14 +1117,14 @@ class App:
         try:
             if side == "old":
                 if not repo.git_dir or repo.patch or f["status"] == "A" or repo.base_ref == EMPTY_TREE:
-                    raise ApiError(404, "这个文件没有旧版本")
+                    raise ApiError(404, self.tr("这个文件没有旧版本", "this file has no older version"))
                 left = repo.base_ref.split("..")[0] or "HEAD"
                 if "..." in repo.base_ref:
                     left = git(["merge-base", left, repo.base_ref.split("...")[1] or "HEAD"], repo.root).strip()
                 text = git(["show", "%s:%s" % (left, f["oldPath"] or f["path"])], repo.root)
             else:
                 if f["status"] == "D":
-                    raise ApiError(404, "这个文件被删除了")
+                    raise ApiError(404, self.tr("这个文件被删除了", "this file was deleted"))
                 if repo.range:
                     right = repo.base_ref.split("..")[-1].lstrip(".") or "HEAD"
                     text = git(["show", "%s:%s" % (right, f["path"])], repo.root)
@@ -1119,7 +1133,7 @@ class App:
                     if not full.startswith(os.path.realpath(repo.root) + os.sep):
                         raise ApiError(403, "path is outside the repository")
                     if os.path.getsize(full) > 4 * MAX_TEXT_BYTES:
-                        raise ApiError(413, "文件太大")
+                        raise ApiError(413, self.tr("文件太大", "file too large"))
                     text = read_text(full)
         except (RuntimeError, OSError) as e:
             raise ApiError(404, str(e))
@@ -1139,7 +1153,7 @@ class App:
         if not question and not use_ai:
             raise ApiError(400, "empty message")
         if use_ai and not self.explainer.ready():
-            raise ApiError(400, self.explainer.error or "AI explainer unavailable")
+            raise ApiError(400, self.ai_unavailable())
         job = None
         with self.store.lock:
             st = self.store.data
@@ -1210,7 +1224,7 @@ class App:
             raise ApiError(400, "file not in the diff")
         rows = flat_rows(f)
         if not rows:
-            raise ApiError(400, "这个文件没有可以讲解的文本改动")
+            raise ApiError(400, self.tr("这个文件没有可以讲解的文本改动", "this file has no text changes to explain"))
         try:
             a = max(0, int(body.get("rowStart", 0)))
             b = min(len(rows) - 1, int(body.get("rowEnd", len(rows) - 1)))
@@ -1219,9 +1233,11 @@ class App:
         if b < a:
             raise ApiError(400, "empty row range")
         if b - a + 1 > MAX_ANNOTATE_ROWS:
-            raise ApiError(400, "一次最多逐行讲解 %d 行；请选一段（点行号，Shift+点击扩展）或者按 hunk 讲解" % MAX_ANNOTATE_ROWS)
+            raise ApiError(400, self.tr("一次最多逐行讲解 %d 行；请选一段（点行号，Shift+点击扩展）或者按 hunk 讲解",
+                                        "at most %d lines per walkthrough: select a range or walk through one hunk")
+                           % MAX_ANNOTATE_ROWS)
         if not self.explainer.ready():
-            raise ApiError(400, self.explainer.error or "AI explainer unavailable")
+            raise ApiError(400, self.ai_unavailable())
         with self.store.lock:
             st = self.store.data
             for old in list(st["annotations"].values()):  # a new walkthrough replaces overlapping ones
@@ -1295,7 +1311,7 @@ class App:
                         obj["unstructured"] = True
                     obj["items"], obj["status"] = items or [], "done" if items else "error"
                     if not items:
-                        obj["error"] = "解释器没有返回内容"
+                        obj["error"] = self.tr("解释器没有返回内容", "the explainer returned nothing")
             elif msg is not None:
                 if final:
                     msg["text"] = final
@@ -1436,7 +1452,7 @@ class App:
             st = self.store.data
             cur = st["rounds"][str(st["round"])]
             if cur.get("submitted"):
-                raise ApiError(409, "第 %d 轮已经提交过了" % st["round"])
+                raise ApiError(409, self.tr("第 %d 轮已经提交过了", "round %d was already submitted") % st["round"])
             markdown, data = self.build_review(verdict, comment)
             stem = os.path.join(self.reviews_dir, "round-%d" % st["round"])
             write_atomic(stem + ".json", json.dumps(data, ensure_ascii=False, indent=2))

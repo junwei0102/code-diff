@@ -89,6 +89,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-wid
 .chip.c-author { border-color: var(--author); color: var(--author); }
 .chip.c-pending { border-color: var(--warn); color: var(--warn); }
 .chip.c-ok { border-color: var(--ok); color: var(--ok); }
+#btn-lang { min-width: 52px; justify-content: center; font-weight: 600; }
 
 /* buttons */
 .btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; white-space: nowrap; line-height: 1.35; }
@@ -234,6 +235,7 @@ tr.anno-head > td { padding-top: 4px; padding-bottom: 4px; background: var(--ai-
 .b-q { color: var(--accent); }
 .b-ov { color: var(--ai); }
 .thread.outdated .th-head::after { content: "代码已变，原位置找不到了"; color: var(--fg-3); font-size: 11.5px; }
+:lang(en) .thread.outdated .th-head::after { content: "code changed; its original spot is gone"; }
 .th-msgs { padding: 2px 12px; }
 .msg { padding: 8px 0; border-bottom: 1px dashed var(--border-2); }
 .msg:last-child { border-bottom: 0; }
@@ -245,8 +247,8 @@ tr.anno-head > td { padding-top: 4px; padding-bottom: 4px; background: var(--ai-
 .pending { color: var(--fg-2); font-size: 12.5px; margin-top: 4px; }
 .err { color: var(--bad); white-space: pre-wrap; font-size: 12.5px; margin-top: 4px; }
 details.tools { font-size: 12px; color: var(--fg-2); margin-top: 4px; }
-details.old-ai > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--ai); }
 details.tools summary { cursor: pointer; }
+details.old-ai > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--ai); }
 .th-foot { display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--border-2); flex-wrap: wrap; align-items: center; }
 .th-compose { padding: 8px 10px; border-top: 1px solid var(--border-2); }
 .thread.resolved .th-msgs, .thread.resolved .th-foot, .thread.resolved .th-compose { display: none; }
@@ -337,26 +339,27 @@ table.vf td.ln { cursor: default; }
 </head>
 <body>
 <header id="top">
-  <button class="btn icon only-narrow" data-act="toggle-side" title="文件列表">☰</button>
+  <button class="btn icon only-narrow" data-act="toggle-side" data-i18n-title="hdr.filesTip">☰</button>
   <div class="brand"><span class="logo">◧</span><span class="hide-narrow">Diff Review</span></div>
   <div class="meta" id="meta"></div>
   <div class="spacer"></div>
-  <button class="btn" data-act="overview" id="btn-overview" title="让 AI 带你通读整个改动">📖<span class="lbl"> 整体讲解</span></button>
-  <button class="btn icon" data-act="help" title="用法和快捷键（?）">?</button>
-  <button class="btn icon" data-act="settings" title="设置">⚙</button>
-  <button class="btn icon" data-act="theme" title="切换明暗">◐</button>
-  <button class="btn primary" data-act="open-submit" id="btn-submit">提交 review</button>
+  <button class="btn" data-act="overview" id="btn-overview" data-i18n-title="hdr.overviewTip">📖<span class="lbl" data-i18n="hdr.overview"></span></button>
+  <button class="btn icon" data-act="help" data-i18n-title="hdr.helpTip">?</button>
+  <button class="btn icon" data-act="settings" data-i18n-title="hdr.settingsTip">⚙</button>
+  <button class="btn icon" data-act="theme" data-i18n-title="hdr.themeTip">◐</button>
+  <button class="btn" data-act="lang" id="btn-lang"></button>
+  <button class="btn primary" data-act="open-submit" id="btn-submit"></button>
 </header>
 <div id="layout">
   <nav id="side">
-    <div class="side-head"><input id="filter" type="search" placeholder="筛选文件…" autocomplete="off"><div id="progress" class="small muted"></div></div>
+    <div class="side-head"><input id="filter" type="search" data-i18n-ph="side.filter" autocomplete="off"><div id="progress" class="small muted"></div></div>
     <div id="filelist"></div>
-    <div class="side-foot small muted">点行号选行 · Shift/拖动 多选 · j/k 换文件 · ? 帮助</div>
+    <div class="side-foot small muted" data-i18n="side.foot"></div>
   </nav>
   <main id="main">
     <div id="banners"></div>
     <section id="intro"></section>
-    <section id="files"><div class="loading"><span class="spin"></span> 加载 diff…</div></section>
+    <section id="files"><div class="loading"><span class="spin"></span> <span data-i18n="loading"></span></div></section>
   </main>
 </div>
 <div id="modal" hidden></div>
@@ -372,21 +375,495 @@ const trunc = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); retur
 const stripCR = s => s.endsWith('\r') ? s.slice(0, -1) : s;
 const idNum = id => +String(id).replace(/\D/g, '') || 0;
 const byId = (a, b) => idNum(a.id) - idNum(b.id);
+const plural = n => (n === 1 ? '' : 's');
+
+// ---------------------------------------------------------------- UI text, Chinese and English
+const I18N = {
+  zh: {
+    'hdr.filesTip': '文件列表',
+    'hdr.overview': ' 整体讲解',
+    'hdr.overviewTip': '让 AI 带你通读整个改动',
+    'hdr.helpTip': '用法和快捷键（?）',
+    'hdr.settingsTip': '设置',
+    'hdr.themeTip': '切换明暗',
+    'hdr.langBtn': 'EN',
+    'hdr.langTip': 'Switch to English（AI 的回答也会改用英文）',
+    'hdr.submit': '提交 review',
+    'hdr.submitted': '已提交',
+    'hdr.branchTip': '分支',
+    'hdr.baseTip': '对比的基准',
+    'hdr.round': n => `第 ${n} 轮`,
+    'hdr.roundSubmitted': ' · 已提交',
+    'hdr.files': n => `${n} 个文件`,
+    'doc.title': (name, n) => `${name} · 第${n}轮 · Diff Review`,
+    'side.filter': '筛选文件…',
+    'side.foot': '点行号选行 · Shift/拖动 多选 · j/k 换文件 · ? 帮助',
+    'side.noMatch': '没有匹配的文件',
+    'side.progress': (ok, n) => `已看懂 <b>${ok}</b>/${n}`,
+    'side.untracked': '未跟踪的新文件',
+    'loading': '加载 diff…',
+    'loadFailed': m => `加载失败：${m}`,
+    'api.unreachable': m => `连不上 diff-review 服务（${m}）`,
+    'base.emptyRepo': '空仓库 → 工作区',
+    'base.worktree': '工作区',
+    'lbl.old': '旧 ',
+    'lbl.wholeFile': '整个文件',
+    'lbl.wholeFileParen': '（整个文件）',
+    'lbl.aboutWhole': '关于整体改动',
+    'lbl.round': n => `第${n}轮`,
+    'ban.disconnected': '⚠ 连不上 diff-review 服务，正在重试…（如果这次 review 已经结束，可以关掉这个页面）',
+    'ban.noAi': e => `AI 解释不可用：${e}。你仍然可以把问题留给作者，或者直接打回。`,
+    'ban.approved': n => `✅ 第 ${n} 轮已通过，可以关掉这个页面了。`,
+    'ban.submitted': (n, v) => `已提交第 ${n} 轮（${v}）。agent 处理完会推送第 ${n + 1} 轮，这个页面会自动刷新。`,
+    'ban.view': '看提交内容',
+    'ban.newRound': n => `🔄 第 ${n} 轮：agent 已经按你的意见更新了。先看「作者说明」和各个讨论里作者的回复。`,
+    'ban.gotIt': '知道了',
+    'verdict.approve': '✅ 通过',
+    'verdict.comment': '💬 只提问',
+    'verdict.changes': '↩️ 打回修改',
+    'ai.noClaude': '找不到能用的 claude 命令（用 --claude /path/to/claude 或环境变量 DIFF_REVIEW_CLAUDE 指定）',
+    'ai.helpFailed': '运行 claude --help 失败',
+    'intro.notes': '✍️ 作者说明',
+    'intro.notesSub': n => `第 ${n} 轮 · 写代码的 agent 自己写的`,
+    'intro.noNotes': 'agent 这次没有写整体说明。',
+    'intro.history': n => `之前的轮次（${n}）`,
+    'intro.histLink': '提交的内容',
+    'intro.skipped': n => `${n} 项没有显示`,
+    'intro.askPh': '问一个关于整体改动的问题…（比如：为什么要新增这个依赖？）',
+    'intro.sendHint': 'Ctrl/⌘+Enter 发送',
+    'intro.askAuthor': '问作者（下一轮回答）',
+    'intro.askAuthorTip': '写代码的 agent 下一轮回答',
+    'intro.askAi': '问 AI',
+    'skip.bigDir': n => `未跟踪的目录，文件太多（>${n}），没有展开；不想看就加进 .gitignore`,
+    'skip.tooMany': (n, ex) => `另外 ${n} 个未跟踪文件没有显示（比如 ${ex}）`,
+    'skip.excluded': '被 --exclude 排除',
+    'fskip.tooLarge': mb => `文件太大（${mb} MB），没有显示内容`,
+    'fskip.unreadable': d => `读取失败：${d}`,
+    'files.empty': '没有改动 🎉',
+    'files.emptyHint': b => `对比基准：${b}。如果 agent 已经 commit 了，用 --base 指定更早的 commit。`,
+    'file.authorNote': '✍️ 作者：',
+    'file.bigGenerated': n => `看起来是自动生成的文件，默认折叠（${n} 行）`,
+    'file.bigLarge': n => `改动很大，默认折叠（${n} 行）`,
+    'file.foldTip': '折叠/展开',
+    'file.untracked': '未跟踪',
+    'file.annotate': ' 逐行讲解',
+    'file.annotateTip': '让 AI 一段一段讲这个文件的改动',
+    'file.ask': ' 提问',
+    'file.askTip': '问一个关于整个文件的问题',
+    'file.view': ' 完整文件',
+    'file.viewTip': '看完整文件',
+    'file.ok': ' 看懂了',
+    'file.okTip': '看懂了，没问题（会折叠起来）',
+    'file.bad': ' 需重写',
+    'file.badTip': '这个文件需要重写',
+    'row.noeol': '文件末尾没有换行',
+    'row.binary': '二进制文件，不显示内容',
+    'row.noText': '没有文本改动（空文件，或者只改了权限/重命名）',
+    'row.hunkAnnotate': '📖 逐行讲解这段',
+    'th.followPh': '追问…（Ctrl/⌘+Enter 发送）',
+    'th.toAuthor': '交给作者回答（下一轮，不用 AI）',
+    'badge.overview': '📖 整体讲解',
+    'badge.change': '🚩 要改',
+    'badge.question': '💬 提问',
+    'chip.goneFile': '文件已不在 diff 里',
+    'chip.askAuthor': '问作者',
+    'chip.waitAuthor': '等作者处理',
+    'chip.authorReplied': '作者已回复',
+    'chip.resolved': '已解决',
+    'th.expand': '展开',
+    'th.stop': '■ 停止',
+    'th.aiReading': 'AI 正在看代码…',
+    'th.followUp': '↩ 追问',
+    'th.unflag': '取消「要改」',
+    'th.flag': '🚩 这里要改',
+    'th.flagTip': '把这条变成修改意见，打回时交给 agent',
+    'th.notAuthor': '不用作者回答',
+    'th.toAuthorBtn': '转给作者',
+    'th.toAuthorTip': '写代码的 agent 下一轮回答（它知道当时为什么这么写）',
+    'th.reopen': '重新打开',
+    'th.resolve': '✓ 已解决',
+    'th.understood': '✓ 懂了',
+    'th.deleteConfirm': '删除这个讨论？',
+    'msg.you': '你',
+    'msg.ai': '🤖 解释器',
+    'msg.author': '✍️ 作者（写代码的 agent）',
+    'msg.oldAi': n => `第${n}轮的回答（点开看）`,
+    'msg.writing': '写回答中…',
+    'msg.reading': '查阅代码中…',
+    'msg.thinking': '思考中…',
+    'msg.error': '出错了',
+    'msg.stopped': '已停止',
+    'msg.tools': n => `查阅了 ${n} 处代码`,
+    'tool.read': p => `读 ${p}`,
+    'tool.grep': (p, w) => `搜 “${p}”${w ? ' @ ' + w : ''}`,
+    'tool.glob': p => `找文件 ${p}`,
+    'anno.title': '📖 逐行讲解',
+    'anno.generating': '生成中…（通常要半分钟左右）',
+    'anno.regen': '重新生成',
+    'anno.unstructured': '（没按格式返回，显示原文）',
+    'anno.show': '显示',
+    'anno.hide': '隐藏',
+    'sel.selected': l => `已选 <b>${l}</b>`,
+    'sel.explain': '💬 这段在干嘛？',
+    'sel.ask': '❓ 提问…',
+    'sel.annotate': '📖 逐行讲解',
+    'sel.change': '🚩 这里要改…',
+    'sel.hint': 'Shift+点行号扩选 · Esc 取消',
+    'key': k => `快捷键 ${k}`,
+    'cmp.changeTitle': '🚩 这段要怎么改？（打回时交给 agent）',
+    'cmp.askTitle': l => `❓ 关于 ${l} 的问题`,
+    'cmp.changePh': '写下你希望的改法…（Ctrl/⌘+Enter 发送）',
+    'cmp.askPh': '你的问题…（Ctrl/⌘+Enter 发送）',
+    'cmp.saveChange': '记下修改意见',
+    'fc.rewriteTitle': '✗ 为什么这个文件需要重写？（可选，会交给 agent）',
+    'fc.askTitle': '❓ 关于整个文件的问题',
+    'fc.rewritePh': '比如：抽象太多，直接写成一个函数就行（Ctrl/⌘+Enter 发送）',
+    'fc.markRewrite': '标记「需重写」',
+    'q.default': '这几行在做什么？为什么要这样改？',
+    'q.file': '这个文件的改动整体在做什么？',
+    'q.overview': '请整体讲解一下这次改动：做了什么、为什么，以及推荐的阅读顺序。',
+    'chips.ask': ['这段在干嘛？', '为什么要这样写？', '有更简单的写法吗？', '这里会不会有 bug？', '举个具体输入输出的例子'],
+    'chips.change': ['太绕了，写简单点', '命名看不懂', '拆成小函数', '这段不需要，删掉', '加注释说明为什么', '和项目现有写法不一致'],
+    'chips.rewrite': ['整个文件太复杂，重写', '抽象层太多', '和现有代码风格不一致', '这个文件不需要改'],
+    'chips.overall': ['整体太复杂，请简化重写', '改动范围太大，拆小一点', '跟仓库现有风格不一致', '先补测试', '命名太随意'],
+    'chips.join': '；',
+    'toast.needChange': '写一句你希望怎么改',
+    'toast.needAuthorQ': '写下你想问作者的问题',
+    'toast.noAi': 'AI 不可用',
+    'toast.tooManyRows': '一次最多逐行讲解 400 行：选一段（点行号，Shift+点击扩展），或者在 hunk 标题上点「逐行讲解这段」',
+    'toast.notInDiff': '这个文件不在 diff 里',
+    'toast.saved': '已保存',
+    'vf.new': '新版本',
+    'vf.old': '旧版本',
+    'vf.changedHint': '高亮的是改动过的行',
+    'vf.seeNew': '看新版本',
+    'vf.seeOld': '看旧版本',
+    'vf.close': '关闭 (Esc)',
+    'sub.already': n => `第 ${n} 轮已经提交了，等 agent 推送下一轮`,
+    'sub.title': n => `提交第 ${n} 轮 review`,
+    'sub.approve': '✅ 通过',
+    'sub.approveDesc': '看懂了，接受这次改动',
+    'sub.comment': '💬 只提问',
+    'sub.commentDesc': '把问题交给作者回答，先不要求改代码',
+    'sub.changes': '↩️ 打回修改',
+    'sub.changesDesc': '按我的意见改；整体太挫看不懂，就在下面写「重写」',
+    'sub.overallPh': '整体意见（可选）。比如：整体太绕了，用更直接的方式重写数据加载部分。',
+    'sub.counts': (c, q, b) => `🚩 修改意见 <b>${c}</b> · ❓ 给作者的问题 <b>${q}</b> · ✗ 需重写的文件 <b>${b}</b>`,
+    'sub.okFiles': (ok, n) => `✓ 看懂的文件 ${ok}/${n}`,
+    'sub.unseen': n => `还有 ${n} 个文件没看`,
+    'sub.pending': '还有 AI 回答在生成中（不影响提交）',
+    'sub.submit': '提交',
+    'sub.confirmApprove': n => `还有 ${n} 条修改意见没处理，确定直接通过？`,
+    'sub.confirmEmpty': '没有写任何修改意见，确定打回？（agent 会不知道改什么）',
+    'sub.doneTitle': n => `第 ${n} 轮已提交`,
+    'sub.doneApprove': '已通过 ✅ agent 会收到结果。可以关掉这个页面了。',
+    'sub.doneComment': '问题已经交给作者。agent 回答完会推送下一轮，这个页面会自动刷新。',
+    'sub.doneChanges': '已打回 ↩️ agent 会按你的意见修改，改完推送下一轮，这个页面会自动刷新。',
+    'sub.sent': '交给 agent 的内容',
+    'rev.title': n => `第 ${n} 轮提交的内容`,
+    'set.title': '设置',
+    'set.model': '解释用的模型',
+    'set.models': [['', '默认（跟随你的 Claude Code 设置）'], ['sonnet', 'Sonnet（快）'], ['opus', 'Opus（更强）'], ['haiku', 'Haiku（最快）']],
+    'set.effort': '思考力度',
+    'set.efforts': [['', '默认'], ['low', '低（更快）'], ['medium', '中'], ['high', '高（更细）']],
+    'set.langHint': '界面语言和 AI 回答的语言，用右上角的 EN / 中文 按钮切换。',
+    'set.ai': 'AI：',
+    'set.unavailable': '不可用 — ',
+    'set.server': '服务：',
+    'common.cancel': '取消',
+    'common.send': '发送',
+    'common.stop': '停止',
+    'common.retry': '重试',
+    'common.delete': '删除',
+    'common.close': '关闭',
+    'common.save': '保存',
+    'common.ok': '好',
+    'modal.closeConfirm': '关掉这个窗口？',
+    'help.html': `<h2>怎么用</h2>
+      <ol class="help">
+        <li><b>先看全局。</b>顶部「作者说明」是写代码的 agent 自己写的；点右上角「📖 整体讲解」让 AI 带你通读一遍。</li>
+        <li><b>看不懂就问。</b>点行号选中一行（Shift+点击或拖动可以选多行），然后点「💬 这段在干嘛？」或「❓ 提问…」。回答会贴在代码下面，还可以接着追问。</li>
+        <li><b>逐行讲解。</b>在 hunk 标题上点「📖 逐行讲解这段」，每几行配一句解释。</li>
+        <li><b>提意见。</b>选中代码后点「🚩 这里要改…」；整个文件不行，就点文件头的「✗ 需重写」。</li>
+        <li><b>问作者。</b>提问时勾选「交给作者回答」，或者在 AI 的回答下面点「转给作者」。写代码的 agent 知道当时为什么这么写，它会在下一轮回答。</li>
+        <li><b>提交。</b>右上角「提交 review」，选 ✅ 通过 / 💬 只提问 / ↩️ 打回修改；整体太挫看不懂，就写「重写」。agent 改完会推送下一轮，页面自动刷新。</li>
+      </ol>
+      <p class="muted small">右上角的 EN / 中文 按钮切换界面语言，AI 之后的回答也会跟着换。</p>
+      <h3>快捷键</h3>
+      <table class="keys">
+        <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>下一个 / 上一个文件</td></tr>
+        <tr><td><kbd>e</kbd></td><td>解释选中的行</td></tr>
+        <tr><td><kbd>q</kbd></td><td>对选中的行提问</td></tr>
+        <tr><td><kbd>a</kbd></td><td>逐行讲解选中的行</td></tr>
+        <tr><td><kbd>f</kbd></td><td>对选中的行提修改意见</td></tr>
+        <tr><td><kbd>Ctrl/⌘</kbd> + <kbd>Enter</kbd></td><td>发送</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>取消选择 / 关闭弹窗</td></tr>
+      </table>`,
+  },
+  en: {
+    'hdr.filesTip': 'Files',
+    'hdr.overview': ' Overview',
+    'hdr.overviewTip': 'Let the AI walk you through the whole change',
+    'hdr.helpTip': 'How to use & shortcuts (?)',
+    'hdr.settingsTip': 'Settings',
+    'hdr.themeTip': 'Toggle light / dark',
+    'hdr.langBtn': '中文',
+    'hdr.langTip': '切换到中文（AI 的回答也会改用中文）',
+    'hdr.submit': 'Submit review',
+    'hdr.submitted': 'Submitted',
+    'hdr.branchTip': 'Branch',
+    'hdr.baseTip': 'Diff base',
+    'hdr.round': n => `Round ${n}`,
+    'hdr.roundSubmitted': ' · submitted',
+    'hdr.files': n => `${n} file${plural(n)}`,
+    'doc.title': (name, n) => `${name} · round ${n} · Diff Review`,
+    'side.filter': 'Filter files…',
+    'side.foot': 'Click line numbers to select · Shift/drag for more · j/k files · ? help',
+    'side.noMatch': 'No matching files',
+    'side.progress': (ok, n) => `Understood <b>${ok}</b>/${n}`,
+    'side.untracked': 'New untracked file',
+    'loading': 'Loading diff…',
+    'loadFailed': m => `Failed to load: ${m}`,
+    'api.unreachable': m => `Can't reach the diff-review server (${m})`,
+    'base.emptyRepo': 'empty repo → working tree',
+    'base.worktree': 'working tree',
+    'lbl.old': 'old ',
+    'lbl.wholeFile': 'whole file',
+    'lbl.wholeFileParen': '(whole file)',
+    'lbl.aboutWhole': 'About the whole change',
+    'lbl.round': n => `round ${n}`,
+    'ban.disconnected': '⚠ Lost the connection to the diff-review server, retrying… (if this review is over, you can close this page)',
+    'ban.noAi': e => `AI explanations are unavailable: ${e}. You can still leave questions for the author, or send the change back.`,
+    'ban.approved': n => `✅ Round ${n} approved. You can close this page.`,
+    'ban.submitted': (n, v) => `Round ${n} submitted (${v}). When the agent is done it pushes round ${n + 1}, and this page refreshes by itself.`,
+    'ban.view': 'View submission',
+    'ban.newRound': n => `🔄 Round ${n}: the agent updated the code after your review. Start with the author's notes and the author's replies in each thread.`,
+    'ban.gotIt': 'Got it',
+    'verdict.approve': '✅ Approved',
+    'verdict.comment': '💬 Questions only',
+    'verdict.changes': '↩️ Changes requested',
+    'ai.noClaude': 'No working claude CLI found (pass --claude /path/to/claude or set DIFF_REVIEW_CLAUDE)',
+    'ai.helpFailed': 'running claude --help failed',
+    'intro.notes': "✍️ Author's notes",
+    'intro.notesSub': n => `Round ${n} · written by the agent that made the change`,
+    'intro.noNotes': "The agent didn't write overall notes this time.",
+    'intro.history': n => `Previous rounds (${n})`,
+    'intro.histLink': 'what was submitted',
+    'intro.skipped': n => `${n} item${plural(n)} not shown`,
+    'intro.askPh': 'Ask about the change as a whole… (e.g. why add this dependency?)',
+    'intro.sendHint': 'Ctrl/⌘+Enter to send',
+    'intro.askAuthor': 'Ask the author (answered next round)',
+    'intro.askAuthorTip': 'The agent that wrote the code answers in the next round',
+    'intro.askAi': 'Ask AI',
+    'skip.bigDir': n => `Untracked directory with too many files (>${n}), not expanded; add it to .gitignore to hide it`,
+    'skip.tooMany': (n, ex) => `${n} more untracked files not shown (e.g. ${ex})`,
+    'skip.excluded': 'excluded by --exclude',
+    'fskip.tooLarge': mb => `File too large (${mb} MB), content not shown`,
+    'fskip.unreadable': d => `Could not read the file: ${d}`,
+    'files.empty': 'No changes 🎉',
+    'files.emptyHint': b => `Diff base: ${b}. If the agent already committed, pass --base with an earlier commit.`,
+    'file.authorNote': '✍️ Author: ',
+    'file.bigGenerated': n => `Looks generated, folded by default (${n} lines)`,
+    'file.bigLarge': n => `Large change, folded by default (${n} lines)`,
+    'file.foldTip': 'Fold / unfold',
+    'file.untracked': 'untracked',
+    'file.annotate': ' Walk through',
+    'file.annotateTip': "Have the AI explain this file's changes chunk by chunk",
+    'file.ask': ' Ask',
+    'file.askTip': 'Ask about the whole file',
+    'file.view': ' Full file',
+    'file.viewTip': 'View the full file',
+    'file.ok': ' Understood',
+    'file.okTip': 'Understood, looks fine (folds the file)',
+    'file.bad': ' Needs rewrite',
+    'file.badTip': 'This file needs a rewrite',
+    'row.noeol': 'No newline at end of file',
+    'row.binary': 'Binary file, not shown',
+    'row.noText': 'No text changes (empty file, or only the mode / name changed)',
+    'row.hunkAnnotate': '📖 Walk through this hunk',
+    'th.followPh': 'Follow up… (Ctrl/⌘+Enter to send)',
+    'th.toAuthor': 'Let the author answer (next round, no AI)',
+    'badge.overview': '📖 Overview',
+    'badge.change': '🚩 Change',
+    'badge.question': '💬 Question',
+    'chip.goneFile': 'file no longer in the diff',
+    'chip.askAuthor': 'for the author',
+    'chip.waitAuthor': 'awaiting the author',
+    'chip.authorReplied': 'author replied',
+    'chip.resolved': 'resolved',
+    'th.expand': 'Expand',
+    'th.stop': '■ Stop',
+    'th.aiReading': 'The AI is reading the code…',
+    'th.followUp': '↩ Follow up',
+    'th.unflag': 'Not a change request',
+    'th.flag': '🚩 Needs change',
+    'th.flagTip': 'Turn this into a change request for the agent',
+    'th.notAuthor': "Don't ask the author",
+    'th.toAuthorBtn': 'Ask the author',
+    'th.toAuthorTip': 'The agent that wrote the code answers next round (it knows why it wrote it this way)',
+    'th.reopen': 'Reopen',
+    'th.resolve': '✓ Resolved',
+    'th.understood': '✓ Got it',
+    'th.deleteConfirm': 'Delete this thread?',
+    'msg.you': 'You',
+    'msg.ai': '🤖 Explainer',
+    'msg.author': '✍️ Author (the coding agent)',
+    'msg.oldAi': n => `answer from round ${n} (click to expand)`,
+    'msg.writing': 'Writing…',
+    'msg.reading': 'Reading the code…',
+    'msg.thinking': 'Thinking…',
+    'msg.error': 'Something went wrong',
+    'msg.stopped': 'Stopped',
+    'msg.tools': n => `Looked at ${n} place${plural(n)} in the code`,
+    'tool.read': p => `read ${p}`,
+    'tool.grep': (p, w) => `search “${p}”${w ? ' in ' + w : ''}`,
+    'tool.glob': p => `find files ${p}`,
+    'anno.title': '📖 Walkthrough',
+    'anno.generating': 'Generating… (usually about half a minute)',
+    'anno.regen': 'Regenerate',
+    'anno.unstructured': '(not in the expected format; showing the raw text)',
+    'anno.show': 'Show',
+    'anno.hide': 'Hide',
+    'sel.selected': l => `Selected <b>${l}</b>`,
+    'sel.explain': '💬 What does this do?',
+    'sel.ask': '❓ Ask…',
+    'sel.annotate': '📖 Walk through',
+    'sel.change': '🚩 Needs change…',
+    'sel.hint': 'Shift+click to extend · Esc to cancel',
+    'key': k => `Shortcut: ${k}`,
+    'cmp.changeTitle': '🚩 How should this change? (goes to the agent when you send it back)',
+    'cmp.askTitle': l => `❓ Question about ${l}`,
+    'cmp.changePh': 'Describe how you want it changed… (Ctrl/⌘+Enter to send)',
+    'cmp.askPh': 'Your question… (Ctrl/⌘+Enter to send)',
+    'cmp.saveChange': 'Add change request',
+    'fc.rewriteTitle': '✗ Why does this file need a rewrite? (optional, goes to the agent)',
+    'fc.askTitle': '❓ Question about the whole file',
+    'fc.rewritePh': 'e.g. too many abstractions, one function would do (Ctrl/⌘+Enter to send)',
+    'fc.markRewrite': 'Mark “needs rewrite”',
+    'q.default': 'What do these lines do, and why were they changed?',
+    'q.file': 'What does the change to this file do overall?',
+    'q.overview': 'Give me an overview of this change: what it does, why, and a suggested reading order.',
+    'chips.ask': ['What does this do?', 'Why is it written this way?', 'Is there a simpler way?', 'Could this be a bug?', 'Show a concrete input/output example'],
+    'chips.change': ['Too convoluted, simplify it', "Names don't make sense", 'Split into smaller functions', 'Not needed, remove it', 'Add a comment explaining why', "Doesn't match the project's style"],
+    'chips.rewrite': ['The whole file is too complex, rewrite it', 'Too many layers of abstraction', "Doesn't match the existing code style", "This file shouldn't change"],
+    'chips.overall': ['Too complex overall, simplify and rewrite', 'The change is too big, split it up', "Doesn't match the repo's style", 'Add tests first', 'Sloppy naming'],
+    'chips.join': '; ',
+    'toast.needChange': 'Write how you want it changed',
+    'toast.needAuthorQ': 'Write your question for the author',
+    'toast.noAi': 'AI is unavailable',
+    'toast.tooManyRows': 'At most 400 lines per walkthrough: select a range (click a line number, Shift+click to extend) or use “Walk through this hunk”.',
+    'toast.notInDiff': 'That file is not in the diff',
+    'toast.saved': 'Saved',
+    'vf.new': 'new version',
+    'vf.old': 'old version',
+    'vf.changedHint': 'Highlighted lines were changed',
+    'vf.seeNew': 'View new version',
+    'vf.seeOld': 'View old version',
+    'vf.close': 'Close (Esc)',
+    'sub.already': n => `Round ${n} is already submitted; wait for the agent to push the next round`,
+    'sub.title': n => `Submit review · round ${n}`,
+    'sub.approve': '✅ Approve',
+    'sub.approveDesc': 'I understand it and accept the change',
+    'sub.comment': '💬 Questions only',
+    'sub.commentDesc': 'Send my questions to the author; no code changes yet',
+    'sub.changes': '↩️ Request changes',
+    'sub.changesDesc': 'Change it as I asked; if it is too messy to follow overall, say “rewrite” below',
+    'sub.overallPh': 'Overall comment (optional). e.g. Too convoluted overall; rewrite the data loading more directly.',
+    'sub.counts': (c, q, b) => `🚩 Change requests <b>${c}</b> · ❓ Questions for the author <b>${q}</b> · ✗ Files to rewrite <b>${b}</b>`,
+    'sub.okFiles': (ok, n) => `✓ Files understood ${ok}/${n}`,
+    'sub.unseen': n => `${n} file${plural(n)} not reviewed yet`,
+    'sub.pending': 'Some AI answers are still being written (you can submit anyway)',
+    'sub.submit': 'Submit',
+    'sub.confirmApprove': n => `${n} change request${plural(n)} still open. Approve anyway?`,
+    'sub.confirmEmpty': "You haven't written any change requests. Send it back anyway? (The agent won't know what to change.)",
+    'sub.doneTitle': n => `Round ${n} submitted`,
+    'sub.doneApprove': 'Approved ✅ The agent gets the result. You can close this page.',
+    'sub.doneComment': 'Your questions went to the author. When it has answered, the next round shows up here by itself.',
+    'sub.doneChanges': 'Sent back ↩️ The agent makes the changes and pushes the next round; this page refreshes by itself.',
+    'sub.sent': 'What the agent receives',
+    'rev.title': n => `Round ${n} submission`,
+    'set.title': 'Settings',
+    'set.model': 'Explainer model',
+    'set.models': [['', 'Default (your Claude Code setting)'], ['sonnet', 'Sonnet (fast)'], ['opus', 'Opus (stronger)'], ['haiku', 'Haiku (fastest)']],
+    'set.effort': 'Reasoning effort',
+    'set.efforts': [['', 'Default'], ['low', 'Low (faster)'], ['medium', 'Medium'], ['high', 'High (more thorough)']],
+    'set.langHint': 'The EN / 中文 button (top right) switches the page and the AI answers between English and Chinese.',
+    'set.ai': 'AI: ',
+    'set.unavailable': 'unavailable — ',
+    'set.server': 'Server: ',
+    'common.cancel': 'Cancel',
+    'common.send': 'Send',
+    'common.stop': 'Stop',
+    'common.retry': 'Retry',
+    'common.delete': 'Delete',
+    'common.close': 'Close',
+    'common.save': 'Save',
+    'common.ok': 'OK',
+    'modal.closeConfirm': 'Close this dialog?',
+    'help.html': `<h2>How to use</h2>
+      <ol class="help">
+        <li><b>Start with the big picture.</b> The author's notes at the top were written by the agent that made the change; “📖 Overview” (top right) has the AI walk you through it.</li>
+        <li><b>Ask whenever something is unclear.</b> Click a line number to select a line (Shift+click or drag for more), then “💬 What does this do?” or “❓ Ask…”. The answer appears right under the code, and you can follow up.</li>
+        <li><b>Line-by-line walkthrough.</b> “📖 Walk through this hunk” on a hunk header adds a short note to every few lines.</li>
+        <li><b>Request changes.</b> Select code, then “🚩 Needs change…”; if a whole file is bad, use “✗ Needs rewrite” in its header.</li>
+        <li><b>Ask the author.</b> Tick “Let the author answer” when you ask, or click “Ask the author” under an AI answer. The agent that wrote the code knows why it wrote it that way and answers in the next round.</li>
+        <li><b>Submit.</b> “Submit review” (top right): ✅ Approve / 💬 Questions only / ↩️ Request changes (say “rewrite” if it is too messy overall). The agent makes the changes and pushes the next round; this page refreshes by itself.</li>
+      </ol>
+      <p class="muted small">The EN / 中文 button (top right) switches the page language; later AI answers follow it.</p>
+      <h3>Shortcuts</h3>
+      <table class="keys">
+        <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Next / previous file</td></tr>
+        <tr><td><kbd>e</kbd></td><td>Explain the selected lines</td></tr>
+        <tr><td><kbd>q</kbd></td><td>Ask about the selected lines</td></tr>
+        <tr><td><kbd>a</kbd></td><td>Walk through the selected lines</td></tr>
+        <tr><td><kbd>f</kbd></td><td>Request a change to the selected lines</td></tr>
+        <tr><td><kbd>Ctrl/⌘</kbd> + <kbd>Enter</kbd></td><td>Send</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Clear the selection / close a dialog</td></tr>
+      </table>`,
+  },
+};
+
+function initialLang() {
+  try {
+    const saved = localStorage.getItem('dr-lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+  } catch (e) { /* storage blocked */ }
+  return /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
+}
+let LANG = initialLang();
+function T(key, ...args) {
+  const v = key in I18N[LANG] ? I18N[LANG][key] : I18N.zh[key];
+  if (typeof v === 'function') return v(...args);
+  return v === undefined ? key : v;
+}
+function applyStatic() {
+  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  $$('[data-i18n]').forEach(el => { el.textContent = T(el.dataset.i18n); });
+  $$('[data-i18n-title]').forEach(el => { el.title = T(el.dataset.i18nTitle); });
+  $$('[data-i18n-ph]').forEach(el => { el.placeholder = T(el.dataset.i18nPh); });
+  const btn = $('#btn-lang');
+  btn.textContent = T('hdr.langBtn');
+  btn.title = T('hdr.langTip');
+}
+function toggleLang() {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  try { localStorage.setItem('dr-lang', LANG); } catch (e) { /* storage blocked */ }
+  applyStatic();
+  if (S.booted) rerender();
+  syncLang();
+}
+// AI answers (and the server's own messages) follow the page language.
+async function syncLang() {
+  if (!S.booted || S.settings.lang === LANG) return;
+  try { S.settings = (await api('POST', '/api/settings', {lang: LANG})).settings; } catch (e) { /* retried on the next boot */ }
+}
 
 const S = {
   serverId: null, diffVersion: null, version: 0, round: 1, rounds: {}, settings: {}, jobs: 0,
   repo: {}, ai: {available: false}, listen: {}, stats: {}, files: [], byPath: {}, notes: {summary: '', files: {}}, skipped: [],
   threads: {}, annos: {}, verdicts: {}, threadEls: {}, sel: null, composer: null, actbar: null,
-  collapsed: {}, hideAnno: {}, connected: true, booted: false, newRoundBanner: null,
+  collapsed: {}, hideAnno: {}, connected: true, booted: false, newRoundBanner: null, draftComment: '',
 };
-
-const DEFAULT_Q = '这几行在做什么？为什么要这样改？';
-const ASK_CHIPS = ['这段在干嘛？', '为什么要这样写？', '有更简单的写法吗？', '这里会不会有 bug？', '举个具体输入输出的例子'];
-const CHANGE_CHIPS = ['太绕了，写简单点', '命名看不懂', '拆成小函数', '这段不需要，删掉', '加注释说明为什么', '和项目现有写法不一致'];
-const REWRITE_CHIPS = ['整个文件太复杂，重写', '抽象层太多', '和现有代码风格不一致', '这个文件不需要改'];
-const OVERALL_CHIPS = ['整体太复杂，请简化重写', '改动范围太大，拆小一点', '跟仓库现有风格不一致', '先补测试', '命名太随意'];
-const VERDICT_ZH = {approve: '✅ 通过', comment: '💬 只提问', changes: '↩️ 打回修改'};
-const MODELS = [['', '默认（跟随你的 Claude Code 设置）'], ['sonnet', 'Sonnet（快）'], ['opus', 'Opus（更强）'], ['haiku', 'Haiku（最快）']];
 const GENERATED = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|Pipfile\.lock)$|\.min\.(js|css)$|\.map$/;
 const EXT_LANG = {
   py: 'python', pyi: 'python', pyx: 'python', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
@@ -404,7 +881,7 @@ async function api(method, url, body) {
   try {
     r = await fetch(url, {method, cache: 'no-store', headers: {'X-DR-Token': TOKEN, 'Content-Type': 'application/json'},
                           body: body === undefined ? undefined : JSON.stringify(body)});
-  } catch (e) { throw new Error('连不上 diff-review 服务（' + e.message + '）'); }
+  } catch (e) { throw new Error(T('api.unreachable', e.message)); }
   let data = null;
   try { data = await r.json(); } catch (e) { /* not JSON */ }
   if (!r.ok) throw new Error((data && data.error) || 'HTTP ' + r.status);
@@ -428,6 +905,14 @@ async function boot() {
   renderAll();
   S.booted = true;
   if (y) window.scrollTo(0, y);
+  syncLang();
+}
+function rerender() {  // everything again, e.g. after switching the language
+  const y = window.scrollY;
+  for (const f of S.files) { f.rowEls = null; f.painted = false; }
+  Object.assign(S, {threadEls: {}, sel: null, composer: null, actbar: null});
+  renderAll();
+  window.scrollTo(0, y);
 }
 
 function applyState(st, initial) {
@@ -511,14 +996,14 @@ function rangeLabel(f, a, b) {
   const rows = f.rows.slice(a, b + 1);
   const ns = rows.filter(r => r.n != null).map(r => r.n), os = rows.filter(r => r.o != null).map(r => r.o);
   if (ns.length) return ns[0] === ns[ns.length - 1] ? 'L' + ns[0] : `L${ns[0]}–L${ns[ns.length - 1]}`;
-  if (os.length) return os[0] === os[os.length - 1] ? '旧 L' + os[0] : `旧 L${os[0]}–L${os[os.length - 1]}`;
+  if (os.length) return T('lbl.old') + (os[0] === os[os.length - 1] ? 'L' + os[0] : `L${os[0]}–L${os[os.length - 1]}`);
   return '';
 }
 function anchorLabel(t) {
   const a = t.anchor;
-  if (!a || a.start == null) return '整个文件';
+  if (!a || a.start == null) return T('lbl.wholeFile');
   const span = a.start === a.end ? 'L' + a.start : `L${a.start}–L${a.end}`;
-  return a.side === 'old' ? '旧 ' + span : span;
+  return a.side === 'old' ? T('lbl.old') + span : span;
 }
 function makeAnchor(f, a, b) {
   const rows = f.rows.slice(a, b + 1);
@@ -542,9 +1027,31 @@ function locate(t, f) {
 function baseLabel() {
   const r = S.repo;
   if (r.patch) return 'patch: ' + r.patch.split('/').pop();
-  if (r.emptyBase) return '空仓库 → 工作区';
+  if (r.emptyBase) return T('base.emptyRepo');
   if (r.range) return r.base;
-  return `${r.base}${r.baseSha ? ' (' + r.baseSha + ')' : ''} → 工作区`;
+  return `${r.base}${r.baseSha ? ' (' + r.baseSha + ')' : ''} → ${T('base.worktree')}`;
+}
+function aiError() {
+  if (S.ai.errorCode === 'no-claude') return T('ai.noClaude');
+  if (S.ai.errorCode === 'help-failed') return T('ai.helpFailed') + (S.ai.error ? ` (${S.ai.error})` : '');
+  return S.ai.error || '';
+}
+function skipText(s) {
+  if (s.code === 'big-dir') return T('skip.bigDir', s.n);
+  if (s.code === 'too-many') return T('skip.tooMany', s.n, s.example);
+  if (s.code === 'excluded') return T('skip.excluded');
+  return s.reason || '';
+}
+function fileSkipText(s) {
+  if (typeof s === 'string') return s;  // written by an older version
+  return s.code === 'too-large' ? T('fskip.tooLarge', s.mb) : T('fskip.unreadable', s.detail || '');
+}
+function toolText(x) {
+  if (typeof x === 'string') return x;  // written by an older version
+  if (x.tool === 'read') return T('tool.read', x.arg);
+  if (x.tool === 'grep') return T('tool.grep', x.arg, x.where);
+  if (x.tool === 'glob') return T('tool.glob', x.arg);
+  return x.tool;
 }
 
 // ---------------------------------------------------------------- rendering: page chrome
@@ -554,15 +1061,15 @@ function renderAll() {
 function renderHeader() {
   const sub = (S.rounds[S.round] || {}).submitted;
   $('#meta').innerHTML = `<b class="repo">${esc(S.repo.name || '')}</b>
-    ${S.repo.branch ? `<span class="chip hide-narrow" title="分支">⎇ ${esc(S.repo.branch)}</span>` : ''}
-    <span class="chip hide-narrow" title="对比的基准">${esc(baseLabel())}</span>
-    <span class="chip ${sub ? 'c-done' : 'c-round'}">第 ${S.round} 轮${sub ? ' · 已提交' : ''}</span>
-    <span class="stat hide-narrow">${S.stats.files || 0} 个文件 <span class="add">+${S.stats.additions || 0}</span> <span class="del">−${S.stats.deletions || 0}</span></span>`;
+    ${S.repo.branch ? `<span class="chip hide-narrow" title="${esc(T('hdr.branchTip'))}">⎇ ${esc(S.repo.branch)}</span>` : ''}
+    <span class="chip hide-narrow" title="${esc(T('hdr.baseTip'))}">${esc(baseLabel())}</span>
+    <span class="chip ${sub ? 'c-done' : 'c-round'}">${esc(T('hdr.round', S.round) + (sub ? T('hdr.roundSubmitted') : ''))}</span>
+    <span class="stat hide-narrow">${esc(T('hdr.files', S.stats.files || 0))} <span class="add">+${S.stats.additions || 0}</span> <span class="del">−${S.stats.deletions || 0}</span></span>`;
   const btn = $('#btn-submit');
   btn.disabled = !!sub;
-  btn.textContent = sub ? '已提交' : '提交 review';
+  btn.textContent = sub ? T('hdr.submitted') : T('hdr.submit');
   $('#btn-overview').hidden = !S.ai.available;
-  document.title = `${S.repo.name || ''} · 第${S.round}轮 · Diff Review`;
+  document.title = T('doc.title', S.repo.name || '', S.round);
 }
 function fileItemHTML(f) {
   const v = (S.verdicts[f.path] || {}).state;
@@ -571,49 +1078,48 @@ function fileItemHTML(f) {
   const cut = f.path.lastIndexOf('/');
   const dir = cut >= 0 ? f.path.slice(0, cut + 1) : '', base = f.path.slice(cut + 1);
   return `<a class="fi ${v ? 'v-' + v : ''}" href="#" data-act="goto-file" data-path="${esc(f.path)}" title="${esc(f.path)}">
-    <span class="st st-${f.untracked ? 'U' : f.status}" title="${f.untracked ? '未跟踪的新文件' : ''}">${f.untracked ? 'U' : f.status}</span>
+    <span class="st st-${f.untracked ? 'U' : f.status}" title="${f.untracked ? esc(T('side.untracked')) : ''}">${f.untracked ? 'U' : f.status}</span>
     <span class="fname"><span class="base">${esc(base)}</span><span class="dir">${esc(dir)}</span></span>
     <span class="fmeta">${nChange ? `<span>🚩${nChange}</span>` : ''}${nQ ? `<span>💬${nQ}</span>` : ''}${v === 'ok' ? '<span class="b-ok">✓</span>' : v === 'rewrite' ? '<span class="b-bad">✗</span>' : ''}</span></a>`;
 }
 function renderSidebar() {
   const q = $('#filter').value.trim().toLowerCase();
   const items = S.files.filter(f => !q || f.path.toLowerCase().includes(q)).map(fileItemHTML).join('');
-  $('#filelist').innerHTML = items || '<div class="muted small pad">没有匹配的文件</div>';
+  $('#filelist').innerHTML = items || `<div class="muted small pad">${esc(T('side.noMatch'))}</div>`;
   const ok = S.files.filter(f => (S.verdicts[f.path] || {}).state === 'ok').length;
   const open = Object.values(S.threads).filter(t => !t.resolved);
   const changes = open.filter(t => t.kind === 'change').length;
-  $('#progress').innerHTML = `已看懂 <b>${ok}</b>/${S.files.length}` + (changes ? ` · 🚩 ${changes}` : '') + (open.length - changes ? ` · 💬 ${open.length - changes}` : '');
+  $('#progress').innerHTML = T('side.progress', ok, S.files.length) + (changes ? ` · 🚩 ${changes}` : '') + (open.length - changes ? ` · 💬 ${open.length - changes}` : '');
   markActive();
 }
 function renderBanners() {
   const out = [];
-  if (!S.connected) out.push('<div class="banner err">⚠ 连不上 diff-review 服务，正在重试…（如果这次 review 已经结束，可以关掉这个页面）</div>');
-  if (!S.ai.available && S.ai.error) out.push(`<div class="banner warn">AI 解释不可用：${esc(S.ai.error)}。你仍然可以把问题留给作者，或者直接打回。</div>`);
+  if (!S.connected) out.push(`<div class="banner err">${esc(T('ban.disconnected'))}</div>`);
+  if (!S.ai.available && (S.ai.error || S.ai.errorCode)) out.push(`<div class="banner warn">${esc(T('ban.noAi', aiError()))}</div>`);
   const sub = (S.rounds[S.round] || {}).submitted;
   if (sub) {
-    const text = sub.verdict === 'approve' ? `✅ 第 ${S.round} 轮已通过，可以关掉这个页面了。`
-      : `已提交第 ${S.round} 轮（${VERDICT_ZH[sub.verdict]}）。agent 处理完会推送第 ${S.round + 1} 轮，这个页面会自动刷新。`;
-    out.push(`<div class="banner ${sub.verdict === 'approve' ? 'ok' : 'info'}">${text} <a href="#" data-act="show-review" data-round="${S.round}">看提交内容</a></div>`);
+    const text = sub.verdict === 'approve' ? T('ban.approved', S.round) : T('ban.submitted', S.round, T('verdict.' + sub.verdict));
+    out.push(`<div class="banner ${sub.verdict === 'approve' ? 'ok' : 'info'}">${esc(text)} <a href="#" data-act="show-review" data-round="${S.round}">${esc(T('ban.view'))}</a></div>`);
   } else if (S.newRoundBanner === S.round && S.round > 1) {
-    out.push(`<div class="banner ok">🔄 第 ${S.round} 轮：agent 已经按你的意见更新了。先看「作者说明」和各个讨论里作者的回复。<span class="spacer"></span><button class="btn xs ghost" data-act="dismiss-banner">知道了</button></div>`);
+    out.push(`<div class="banner ok">${esc(T('ban.newRound', S.round))}<span class="spacer"></span><button class="btn xs ghost" data-act="dismiss-banner">${esc(T('ban.gotIt'))}</button></div>`);
   }
   $('#banners').innerHTML = out.join('');
 }
 function renderIntro() {
   const past = Object.values(S.rounds).filter(r => r.n < S.round && r.submitted).sort((a, b) => b.n - a.n);
-  let html = `<div class="card notes"><div class="card-h">✍️ 作者说明 <span class="muted small">第 ${S.round} 轮 · 写代码的 agent 自己写的</span></div>
-    ${S.notes.summary ? `<div class="md">${md(S.notes.summary)}</div>` : '<div class="muted">agent 这次没有写整体说明。</div>'}</div>`;
+  let html = `<div class="card notes"><div class="card-h">${esc(T('intro.notes'))} <span class="muted small">${esc(T('intro.notesSub', S.round))}</span></div>
+    ${S.notes.summary ? `<div class="md">${md(S.notes.summary)}</div>` : `<div class="muted">${esc(T('intro.noNotes'))}</div>`}</div>`;
   if (past.length) {
-    html += `<details class="card"><summary>之前的轮次（${past.length}）</summary>${past.map(r => `<div class="hist-row"><b>第 ${r.n} 轮</b> · ${VERDICT_ZH[r.submitted.verdict]}${r.submitted.comment ? ' · ' + esc(trunc(r.submitted.comment, 140)) : ''} · <a href="#" data-act="show-review" data-round="${r.n}">提交的内容</a></div>`).join('')}</details>`;
+    html += `<details class="card"><summary>${esc(T('intro.history', past.length))}</summary>${past.map(r => `<div class="hist-row"><b>${esc(T('hdr.round', r.n))}</b> · ${esc(T('verdict.' + r.submitted.verdict))}${r.submitted.comment ? ' · ' + esc(trunc(r.submitted.comment, 140)) : ''} · <a href="#" data-act="show-review" data-round="${r.n}">${esc(T('intro.histLink'))}</a></div>`).join('')}</details>`;
   }
   if (S.skipped.length) {
-    html += `<details class="card"><summary>${S.skipped.length} 项没有显示</summary>${S.skipped.map(s => `<div class="small"><span class="mono">${esc(s.path)}</span> <span class="muted">— ${esc(s.reason)}</span></div>`).join('')}</details>`;
+    html += `<details class="card"><summary>${esc(T('intro.skipped', S.skipped.length))}</summary>${S.skipped.map(s => `<div class="small">${s.path ? `<span class="mono">${esc(s.path)}</span> — ` : ''}<span class="muted">${esc(skipText(s))}</span></div>`).join('')}</details>`;
   }
   html += `<div id="global-threads"></div>
-    <div class="card ask-global"><textarea rows="1" placeholder="问一个关于整体改动的问题…（比如：为什么要新增这个依赖？）"></textarea>
-      <div class="row"><span class="muted small">Ctrl/⌘+Enter 发送</span><span class="spacer"></span>
-      <button class="btn sm ${S.ai.available ? '' : 'primary'}" data-act="global-ask-author" title="写代码的 agent 下一轮回答">问作者（下一轮回答）</button>
-      ${S.ai.available ? '<button class="btn sm primary" data-act="global-ask-ai">问 AI</button>' : ''}</div></div>`;
+    <div class="card ask-global"><textarea rows="1" placeholder="${esc(T('intro.askPh'))}"></textarea>
+      <div class="row"><span class="muted small">${esc(T('intro.sendHint'))}</span><span class="spacer"></span>
+      <button class="btn sm ${S.ai.available ? '' : 'primary'}" data-act="global-ask-author" title="${esc(T('intro.askAuthorTip'))}">${esc(T('intro.askAuthor'))}</button>
+      ${S.ai.available ? `<button class="btn sm primary" data-act="global-ask-ai">${esc(T('intro.askAi'))}</button>` : ''}</div></div>`;
   $('#intro').innerHTML = html;
   placeGlobalThreads();
 }
@@ -624,7 +1130,7 @@ function renderFiles() {
   const box = $('#files');
   box.innerHTML = '';
   if (!S.files.length) {
-    box.innerHTML = `<div class="empty">没有改动 🎉<div class="muted small">对比基准：${esc(baseLabel())}。如果 agent 已经 commit 了，用 --base 指定更早的 commit。</div></div>`;
+    box.innerHTML = `<div class="empty">${esc(T('files.empty'))}<div class="muted small">${esc(T('files.emptyHint', baseLabel()))}</div></div>`;
     return;
   }
   for (const f of S.files) box.appendChild(fileSection(f));
@@ -647,9 +1153,10 @@ function fileSection(f) {
   const folded = f.path in S.collapsed ? S.collapsed[f.path] : ((S.verdicts[f.path] || {}).state === 'ok' || f.big);
   sec.classList.toggle('folded', folded);
   const note = S.notes.files[f.path];
+  const big = GENERATED.test(f.path) ? T('file.bigGenerated', f.rows.length) : T('file.bigLarge', f.rows.length);
   sec.innerHTML = `<div class="file-head"></div><div class="file-body">
-    ${note ? `<div class="file-note"><span class="who">✍️ 作者：</span><div class="md">${md(note, f.path)}</div></div>` : ''}
-    ${f.big ? `<div class="file-info muted small">${GENERATED.test(f.path) ? '看起来是自动生成的文件，' : '改动很大，'}默认折叠（${f.rows.length} 行）</div>` : ''}
+    ${note ? `<div class="file-note"><span class="who">${esc(T('file.authorNote'))}</span><div class="md">${md(note, f.path)}</div></div>` : ''}
+    ${f.big ? `<div class="file-info muted small">${esc(big)}</div>` : ''}
     <div class="file-threads"></div>
     <table class="diff"><colgroup><col class="c-ln"><col class="c-ln"><col></colgroup><tbody></tbody></table></div>`;
   refreshFileHead(f, sec);
@@ -659,17 +1166,19 @@ function fileSection(f) {
 function fileHeadHTML(f) {
   const v = (S.verdicts[f.path] || {}).state;
   const name = f.oldPath && f.oldPath !== f.path ? `${esc(f.oldPath)} → ${esc(f.path)}` : esc(f.path);
-  return `<button class="fold" data-act="fold" title="折叠/展开">▾</button>
+  const tip = key => `title="${esc(T(key))}"`;
+  const lbl = key => `<span class="lbl">${esc(T(key))}</span>`;
+  return `<button class="fold" data-act="fold" ${tip('file.foldTip')}>▾</button>
     <span class="st st-${f.untracked ? 'U' : f.status}">${f.untracked ? 'U' : f.status}</span>
     <span class="path mono" data-act="fold">${name}</span>
-    ${f.untracked ? '<span class="chip tiny">未跟踪</span>' : ''}
+    ${f.untracked ? `<span class="chip tiny">${esc(T('file.untracked'))}</span>` : ''}
     <span class="cnt"><span class="add">+${f.additions}</span> <span class="del">−${f.deletions}</span></span>
     <span class="spacer"></span>
-    ${f.rows.length && S.ai.available ? '<button class="btn sm ghost" data-act="annotate-file" title="让 AI 一段一段讲这个文件的改动">📖<span class="lbl"> 逐行讲解</span></button>' : ''}
-    <button class="btn sm ghost" data-act="ask-file" title="问一个关于整个文件的问题">❓<span class="lbl"> 提问</span></button>
-    ${S.repo.patch ? '' : '<button class="btn sm ghost" data-act="view-file" title="看完整文件">🗎<span class="lbl"> 完整文件</span></button>'}
-    <button class="btn sm verdict-ok ${v === 'ok' ? 'on' : ''}" data-act="verdict-ok" title="看懂了，没问题（会折叠起来）">✓<span class="lbl"> 看懂了</span></button>
-    <button class="btn sm verdict-bad ${v === 'rewrite' ? 'on' : ''}" data-act="verdict-bad" title="这个文件需要重写">✗<span class="lbl"> 需重写</span></button>`;
+    ${f.rows.length && S.ai.available ? `<button class="btn sm ghost" data-act="annotate-file" ${tip('file.annotateTip')}>📖${lbl('file.annotate')}</button>` : ''}
+    <button class="btn sm ghost" data-act="ask-file" ${tip('file.askTip')}>❓${lbl('file.ask')}</button>
+    ${S.repo.patch ? '' : `<button class="btn sm ghost" data-act="view-file" ${tip('file.viewTip')}>🗎${lbl('file.view')}</button>`}
+    <button class="btn sm verdict-ok ${v === 'ok' ? 'on' : ''}" data-act="verdict-ok" ${tip('file.okTip')}>✓${lbl('file.ok')}</button>
+    <button class="btn sm verdict-bad ${v === 'rewrite' ? 'on' : ''}" data-act="verdict-bad" ${tip('file.badTip')}>✗${lbl('file.bad')}</button>`;
 }
 function refreshFileHead(f, sec = fileSec(f.path)) {
   if (!sec) return;
@@ -680,15 +1189,15 @@ function refreshFileHead(f, sec = fileSec(f.path)) {
 }
 function codeCell(r) {
   const cr = r.s.endsWith('\r') ? '<span class="cr" title="CRLF">␍</span>' : '';
-  return `<span class="mk">${r.t === ' ' ? '' : r.t}</span><span class="src">${esc(stripCR(r.s))}</span>${cr}${r.noeol ? '<span class="noeol" title="文件末尾没有换行">⏎̸</span>' : ''}`;
+  return `<span class="mk">${r.t === ' ' ? '' : r.t}</span><span class="src">${esc(stripCR(r.s))}</span>${cr}${r.noeol ? `<span class="noeol" title="${esc(T('row.noeol'))}">⏎̸</span>` : ''}`;
 }
 function rowsHTML(f) {
-  if (f.binary) return '<tr class="info"><td colspan="3">二进制文件，不显示内容</td></tr>';
-  if (f.skipped) return `<tr class="info"><td colspan="3">${esc(f.skipped)}</td></tr>`;
-  if (!f.rows.length) return `<tr class="info"><td colspan="3">${f.meta.length ? esc(f.meta.join(' · ')) : '没有文本改动（空文件，或者只改了权限/重命名）'}</td></tr>`;
+  if (f.binary) return `<tr class="info"><td colspan="3">${esc(T('row.binary'))}</td></tr>`;
+  if (f.skipped) return `<tr class="info"><td colspan="3">${esc(fileSkipText(f.skipped))}</td></tr>`;
+  if (!f.rows.length) return `<tr class="info"><td colspan="3">${esc(f.meta.length ? f.meta.join(' · ') : T('row.noText'))}</td></tr>`;
   let html = '';
   f.hunks.forEach((h, hi) => {
-    html += `<tr class="hunk"><td class="ln" colspan="2">⋯</td><td class="code"><span class="hh">${esc(h.header)}</span>${S.ai.available ? `<button class="hbtn" data-act="annotate-hunk" data-h="${hi}">📖 逐行讲解这段</button>` : ''}</td></tr>`;
+    html += `<tr class="hunk"><td class="ln" colspan="2">⋯</td><td class="code"><span class="hh">${esc(h.header)}</span>${S.ai.available ? `<button class="hbtn" data-act="annotate-hunk" data-h="${hi}">${esc(T('row.hunkAnnotate'))}</button>` : ''}</td></tr>`;
     for (let i = f.hunkStart[hi]; i < f.hunkStart[hi] + h.rows.length; i++) {
       const r = f.rows[i];
       html += `<tr class="r ${r.t === '+' ? 'add' : r.t === '-' ? 'del' : 'ctx'}" data-i="${i}"><td class="ln" data-i="${i}">${r.o == null ? '' : r.o}</td><td class="ln" data-i="${i}">${r.n == null ? '' : r.n}</td><td class="code">${codeCell(r)}</td></tr>`;
@@ -866,9 +1375,9 @@ function threadEl(t) {
     el = document.createElement('div');
     el.dataset.thread = t.id;
     el.innerHTML = `<div class="th-head"></div><div class="th-msgs"></div><div class="th-foot"></div>
-      <div class="th-compose" hidden><textarea rows="2" placeholder="追问…（Ctrl/⌘+Enter 发送）"></textarea>
-      <div class="row"><label class="chk"><input type="checkbox" class="to-author"> 交给作者回答（下一轮，不用 AI）</label><span class="spacer"></span>
-      <button class="btn xs" data-act="t-cancel">取消</button><button class="btn xs primary" data-act="t-send">发送</button></div></div>`;
+      <div class="th-compose" hidden><textarea rows="2" placeholder="${esc(T('th.followPh'))}"></textarea>
+      <div class="row"><label class="chk"><input type="checkbox" class="to-author"> ${esc(T('th.toAuthor'))}</label><span class="spacer"></span>
+      <button class="btn xs" data-act="t-cancel">${esc(T('common.cancel'))}</button><button class="btn xs primary" data-act="t-send">${esc(T('common.send'))}</button></div></div>`;
     S.threadEls[t.id] = el;
   }
   updateThreadEl(t, el);
@@ -890,28 +1399,32 @@ function dropThreadEl(id) {
   delete S.threadEls[id];
 }
 function threadHeadHTML(t) {
-  const kind = t.overview ? '<span class="badge b-ov">📖 整体讲解</span>' : t.kind === 'change' ? '<span class="badge b-change">🚩 要改</span>' : '<span class="badge b-q">💬 提问</span>';
+  const kind = t.overview ? `<span class="badge b-ov">${esc(T('badge.overview'))}</span>`
+    : t.kind === 'change' ? `<span class="badge b-change">${esc(T('badge.change'))}</span>`
+    : `<span class="badge b-q">${esc(T('badge.question'))}</span>`;
   let where = '';
-  if (t.file) where = `<a class="where" href="#" data-act="t-goto">${esc(t.file.split('/').pop())} ${esc(t.anchor ? anchorLabel(t) : '（整个文件）')}</a>`;
-  else if (!t.overview) where = '<span class="muted">关于整体改动</span>';
+  if (t.file) where = `<a class="where" href="#" data-act="t-goto">${esc(t.file.split('/').pop())} ${esc(t.anchor ? anchorLabel(t) : T('lbl.wholeFileParen'))}</a>`;
+  else if (!t.overview) where = `<span class="muted">${esc(T('lbl.aboutWhole'))}</span>`;
+  const chip = (cls, text) => `<span class="chip tiny ${cls}">${esc(text)}</span>`;
   const chips = [];
-  if (t.file && !S.byPath[t.file]) chips.push('<span class="chip tiny">文件已不在 diff 里</span>');
-  if (t.askAuthor && t.kind !== 'change') chips.push('<span class="chip tiny c-author">问作者</span>');
-  if (needsAuthor(t)) chips.push('<span class="chip tiny c-pending">等作者处理</span>');
-  else if (t.messages.some(m => m.role === 'author')) chips.push('<span class="chip tiny c-author">作者已回复</span>');
-  if (t.round !== S.round) chips.push(`<span class="chip tiny">第${t.round}轮</span>`);
-  if (t.resolved) chips.push('<span class="chip tiny c-ok">已解决</span>');
+  if (t.file && !S.byPath[t.file]) chips.push(chip('', T('chip.goneFile')));
+  if (t.askAuthor && t.kind !== 'change') chips.push(chip('c-author', T('chip.askAuthor')));
+  if (needsAuthor(t)) chips.push(chip('c-pending', T('chip.waitAuthor')));
+  else if (t.messages.some(m => m.role === 'author')) chips.push(chip('c-author', T('chip.authorReplied')));
+  if (t.round !== S.round) chips.push(chip('', T('lbl.round', t.round)));
+  if (t.resolved) chips.push(chip('c-ok', T('chip.resolved')));
   const first = (t.messages.find(m => m.role === 'user') || {}).text || '';
   return `${kind}${where}${chips.join('')}${t.resolved ? `<span class="th-sum">${esc(trunc(first, 80))}</span>` : ''}<span class="spacer"></span>
-    ${t.resolved ? '<button class="btn xs ghost" data-act="t-toggle">展开</button>' : ''}<span class="tid">${t.id}</span>`;
+    ${t.resolved ? `<button class="btn xs ghost" data-act="t-toggle">${esc(T('th.expand'))}</button>` : ''}<span class="tid">${t.id}</span>`;
 }
 function threadFootHTML(t) {
-  if (t.messages.some(m => m.status === 'pending')) return '<button class="btn xs" data-act="t-stop">■ 停止</button><span class="muted small">AI 正在看代码…</span>';
-  const b = ['<button class="btn xs" data-act="t-followup">↩ 追问</button>'];
-  if (!t.overview) b.push(t.kind === 'change' ? '<button class="btn xs" data-act="t-unflag">取消「要改」</button>' : '<button class="btn xs warn" data-act="t-flag" title="把这条变成修改意见，打回时交给 agent">🚩 这里要改</button>');
-  if (t.kind !== 'change') b.push(t.askAuthor ? '<button class="btn xs" data-act="t-not-author">不用作者回答</button>' : '<button class="btn xs" data-act="t-to-author" title="写代码的 agent 下一轮回答（它知道当时为什么这么写）">转给作者</button>');
-  b.push(t.resolved ? '<button class="btn xs" data-act="t-reopen">重新打开</button>' : `<button class="btn xs ok" data-act="t-resolve">✓ ${t.kind === 'change' ? '已解决' : '懂了'}</button>`);
-  b.push('<span class="spacer"></span><button class="btn xs ghost" data-act="t-delete" title="删除">🗑</button>');
+  const btn = (act, key, cls, tipKey) => `<button class="btn xs ${cls || ''}" data-act="${act}"${tipKey ? ` title="${esc(T(tipKey))}"` : ''}>${esc(T(key))}</button>`;
+  if (t.messages.some(m => m.status === 'pending')) return btn('t-stop', 'th.stop') + `<span class="muted small">${esc(T('th.aiReading'))}</span>`;
+  const b = [btn('t-followup', 'th.followUp')];
+  if (!t.overview) b.push(t.kind === 'change' ? btn('t-unflag', 'th.unflag') : btn('t-flag', 'th.flag', 'warn', 'th.flagTip'));
+  if (t.kind !== 'change') b.push(t.askAuthor ? btn('t-not-author', 'th.notAuthor') : btn('t-to-author', 'th.toAuthorBtn', '', 'th.toAuthorTip'));
+  b.push(t.resolved ? btn('t-reopen', 'th.reopen') : btn('t-resolve', t.kind === 'change' ? 'th.resolve' : 'th.understood', 'ok'));
+  b.push(`<span class="spacer"></span><button class="btn xs ghost" data-act="t-delete" title="${esc(T('common.delete'))}">🗑</button>`);
   return b.join('');
 }
 function renderMsgs(box, t) {
@@ -919,7 +1432,7 @@ function renderMsgs(box, t) {
   let prev = null;
   for (const m of t.messages) {
     seen.add(m.id);
-    const sig = [m.status, m.text.length, (m.tools || []).length, m.error || ''].join('|');
+    const sig = [LANG, m.status, m.text.length, (m.tools || []).length, m.error || ''].join('|');
     let el = box.querySelector(`[data-m="${m.id}"]`);
     if (!el) {
       el = document.createElement('div');
@@ -932,20 +1445,21 @@ function renderMsgs(box, t) {
   $$('[data-m]', box).forEach(el => { if (!seen.has(el.dataset.m)) el.remove(); });
 }
 function msgHTML(m, t) {
-  const who = m.role === 'user' ? '你' : m.role === 'ai' ? '🤖 解释器' : '✍️ 作者（写代码的 agent）';
+  const who = esc(T(m.role === 'user' ? 'msg.you' : m.role === 'ai' ? 'msg.ai' : 'msg.author'));
   const meta = [];
-  if (m.round && m.round !== t.round) meta.push('第' + m.round + '轮');
+  if (m.round && m.round !== t.round) meta.push(T('lbl.round', m.round));
   if (m.role === 'ai' && m.model) meta.push(m.model);
   let html = `<div class="who">${who}${meta.length ? ` <span class="muted">· ${esc(meta.join(' · '))}</span>` : ''}</div>`;
   if (m.role === 'user') html += `<div class="plain">${esc(m.text)}</div>`;
-  else if (m.role === 'ai' && m.status === 'done' && m.round && m.round < S.round) return `<details class="old-ai"><summary>${who} · 第${m.round}轮的回答（点开看）</summary><div class="md">${md(m.text, t.file)}</div></details>`;
+  else if (m.role === 'ai' && m.status === 'done' && m.round && m.round < S.round) return `<details class="old-ai"><summary>${who} · ${esc(T('msg.oldAi', m.round))}</summary><div class="md">${md(m.text, t.file)}</div></details>`;
   else if (m.text) html += `<div class="md">${md(m.text, t.file)}</div>`;
   if (m.role === 'ai') {
     const tools = m.tools || [];
-    if (m.status === 'pending') html += `<div class="pending"><span class="spin"></span> ${m.text ? '写回答中…' : tools.length ? '查阅代码中…' : '思考中…'}${tools.length ? ` <span class="mono small">${esc(tools[tools.length - 1])}</span>` : ''}</div>`;
-    else if (m.status === 'error') html += `<div class="err">❌ ${esc(m.error || '出错了')}</div>`;
-    else if (m.status === 'cancelled') html += '<div class="muted small">已停止</div>';
-    else if (tools.length) html += `<details class="tools"><summary>查阅了 ${tools.length} 处代码</summary>${tools.map(x => `<div class="mono">${esc(x)}</div>`).join('')}</details>`;
+    const last = tools.length ? ` <span class="mono small">${esc(toolText(tools[tools.length - 1]))}</span>` : '';
+    if (m.status === 'pending') html += `<div class="pending"><span class="spin"></span> ${esc(T(m.text ? 'msg.writing' : tools.length ? 'msg.reading' : 'msg.thinking'))}${last}</div>`;
+    else if (m.status === 'error') html += `<div class="err">❌ ${esc(m.error || T('msg.error'))}</div>`;
+    else if (m.status === 'cancelled') html += `<div class="muted small">${esc(T('msg.stopped'))}</div>`;
+    else if (tools.length) html += `<details class="tools"><summary>${esc(T('msg.tools', tools.length))}</summary>${tools.map(x => `<div class="mono">${esc(toolText(x))}</div>`).join('')}</details>`;
   }
   return html;
 }
@@ -967,12 +1481,13 @@ function placeAnno(f, a) {
   });
 }
 function annoHeadHTML(f, a) {
-  let s = `<div class="anno-bar"><span>📖 逐行讲解 <b>${esc(rangeLabel(f, a.rowStart, a.rowEnd))}</b></span>`;
+  const btn = (act, key, cls) => `<button class="btn xs ${cls || ''}" data-act="${act}">${esc(T(key))}</button>`;
   const tools = a.tools || [];
-  if (a.status === 'pending') s += `<span class="spin"></span><span class="muted small">${tools.length ? esc(tools[tools.length - 1]) : '生成中…（通常要半分钟左右）'}</span><span class="spacer"></span><button class="btn xs" data-act="anno-cancel">停止</button>`;
-  else if (a.status === 'error') s += `<span class="err-inline">${esc(a.error || '出错了')}</span><span class="spacer"></span><button class="btn xs" data-act="anno-redo">重试</button><button class="btn xs ghost" data-act="anno-delete">删除</button>`;
-  else if (a.status === 'cancelled') s += '<span class="muted small">已停止</span><span class="spacer"></span><button class="btn xs" data-act="anno-redo">重新生成</button><button class="btn xs ghost" data-act="anno-delete">删除</button>';
-  else s += `${a.unstructured ? '<span class="muted small">（没按格式返回，显示原文）</span>' : ''}<span class="spacer"></span><button class="btn xs" data-act="anno-toggle">${S.hideAnno[a.id] ? '显示' : '隐藏'}</button><button class="btn xs" data-act="anno-redo">重新生成</button><button class="btn xs ghost" data-act="anno-delete">删除</button>`;
+  let s = `<div class="anno-bar"><span>${esc(T('anno.title'))} <b>${esc(rangeLabel(f, a.rowStart, a.rowEnd))}</b></span>`;
+  if (a.status === 'pending') s += `<span class="spin"></span><span class="muted small">${esc(tools.length ? toolText(tools[tools.length - 1]) : T('anno.generating'))}</span><span class="spacer"></span>${btn('anno-cancel', 'common.stop')}`;
+  else if (a.status === 'error') s += `<span class="err-inline">${esc(a.error || T('msg.error'))}</span><span class="spacer"></span>${btn('anno-redo', 'common.retry')}${btn('anno-delete', 'common.delete', 'ghost')}`;
+  else if (a.status === 'cancelled') s += `<span class="muted small">${esc(T('msg.stopped'))}</span><span class="spacer"></span>${btn('anno-redo', 'anno.regen')}${btn('anno-delete', 'common.delete', 'ghost')}`;
+  else s += `${a.unstructured ? `<span class="muted small">${esc(T('anno.unstructured'))}</span>` : ''}<span class="spacer"></span>${btn('anno-toggle', S.hideAnno[a.id] ? 'anno.show' : 'anno.hide')}${btn('anno-redo', 'anno.regen')}${btn('anno-delete', 'common.delete', 'ghost')}`;
   return s + '</div>';
 }
 function updateAnnoHead(a) {
@@ -1027,29 +1542,30 @@ function placeActbar() {
 }
 function actbarHTML(f) {
   const ai = S.ai.available;
-  return `<div class="bar"><span class="muted small">已选 <b>${esc(rangeLabel(f, S.sel.a, S.sel.b))}</b></span>
-    ${ai ? '<button class="btn sm ai" data-act="sel-explain" title="快捷键 e">💬 这段在干嘛？</button>' : ''}
-    <button class="btn sm" data-act="sel-ask" title="快捷键 q">❓ 提问…</button>
-    ${ai ? '<button class="btn sm" data-act="sel-annotate" title="快捷键 a">📖 逐行讲解</button>' : ''}
-    <button class="btn sm warn" data-act="sel-change" title="快捷键 f">🚩 这里要改…</button>
-    <span class="spacer"></span><span class="muted small hide-narrow">Shift+点行号扩选 · Esc 取消</span>
+  const btn = (act, key, cls, k) => `<button class="btn sm ${cls}" data-act="${act}" title="${esc(T('key', k))}">${esc(T(key))}</button>`;
+  return `<div class="bar"><span class="muted small">${T('sel.selected', esc(rangeLabel(f, S.sel.a, S.sel.b)))}</span>
+    ${ai ? btn('sel-explain', 'sel.explain', 'ai', 'e') : ''}
+    ${btn('sel-ask', 'sel.ask', '', 'q')}
+    ${ai ? btn('sel-annotate', 'sel.annotate', '', 'a') : ''}
+    ${btn('sel-change', 'sel.change', 'warn', 'f')}
+    <span class="spacer"></span><span class="muted small hide-narrow">${esc(T('sel.hint'))}</span>
     <button class="btn xs ghost" data-act="sel-clear" title="Esc">✕</button></div>`;
 }
 function chipsHTML(list) {
   return `<div class="chips">${list.map(c => `<button class="chip-btn" data-act="chip">${esc(c)}</button>`).join('')}</div>`;
 }
 function authorBox(checked) {
-  return `<label class="chk"><input type="checkbox" class="to-author" ${checked || !S.ai.available ? 'checked' : ''} ${S.ai.available ? '' : 'disabled'}> 交给作者回答（下一轮，不用 AI）</label>`;
+  return `<label class="chk"><input type="checkbox" class="to-author" ${checked || !S.ai.available ? 'checked' : ''} ${S.ai.available ? '' : 'disabled'}> ${esc(T('th.toAuthor'))}</label>`;
 }
 function composerHTML(mode, f) {
   const change = mode === 'change';
   return `<div class="composer ${change ? 'is-change' : ''}">
-    <div class="cmp-title">${change ? '🚩 这段要怎么改？（打回时交给 agent）' : '❓ 关于 ' + esc(rangeLabel(f, S.sel.a, S.sel.b)) + ' 的问题'}</div>
-    ${chipsHTML(change ? CHANGE_CHIPS : ASK_CHIPS)}
-    <textarea rows="3" placeholder="${change ? '写下你希望的改法…' : '你的问题…'}（Ctrl/⌘+Enter 发送）"></textarea>
+    <div class="cmp-title">${esc(change ? T('cmp.changeTitle') : T('cmp.askTitle', rangeLabel(f, S.sel.a, S.sel.b)))}</div>
+    ${chipsHTML(T(change ? 'chips.change' : 'chips.ask'))}
+    <textarea rows="3" placeholder="${esc(T(change ? 'cmp.changePh' : 'cmp.askPh'))}"></textarea>
     <div class="row">${change ? '' : authorBox(false)}<span class="spacer"></span>
-      <button class="btn sm" data-act="cmp-cancel">取消</button>
-      <button class="btn sm primary" data-act="cmp-send">${change ? '记下修改意见' : '发送'}</button></div></div>`;
+      <button class="btn sm" data-act="cmp-cancel">${esc(T('common.cancel'))}</button>
+      <button class="btn sm primary" data-act="cmp-send">${esc(T(change ? 'cmp.saveChange' : 'common.send'))}</button></div></div>`;
 }
 
 // ---------------------------------------------------------------- actions
@@ -1076,23 +1592,23 @@ async function sendComposer() {
   const box = S.actbar.firstElementChild;
   const text = box.querySelector('textarea').value.trim();
   if (S.composer.mode === 'change') {
-    if (!text) { toast('写一句你希望怎么改'); return; }
+    if (!text) { toast(T('toast.needChange')); return; }
     return askSelection(text, false, false, 'change');
   }
   const toAuthor = box.querySelector('.to-author').checked;
-  if (toAuthor && !text) { toast('写下你想问作者的问题'); return; }
-  return askSelection(text || DEFAULT_Q, !toAuthor, toAuthor, 'question');
+  if (toAuthor && !text) { toast(T('toast.needAuthorQ')); return; }
+  return askSelection(text || T('q.default'), !toAuthor, toAuthor, 'question');
 }
 function fillChip(el) {
   const box = el.closest('.composer, .modal, .fcomposer');
   const ta = box && box.querySelector('textarea');
   if (!ta) return;
-  ta.value = ta.value.trim() ? ta.value.trim() + '；' + el.textContent : el.textContent;
+  ta.value = ta.value.trim() ? ta.value.trim() + T('chips.join') + el.textContent : el.textContent;
   ta.focus();
 }
 async function annotateRange(path, a, b) {
-  if (!S.ai.available) { toast('AI 不可用'); return; }
-  if (b - a + 1 > 400) { toast('一次最多逐行讲解 400 行：选一段（点行号，Shift+点击扩展），或者在 hunk 标题上点「逐行讲解这段」'); return; }
+  if (!S.ai.available) { toast(T('toast.noAi')); return; }
+  if (b - a + 1 > 400) { toast(T('toast.tooManyRows')); return; }
   const res = await api('POST', '/api/annotate', {file: path, rowStart: a, rowEnd: b});
   for (const [id, x] of Object.entries(S.annos)) if (x.file === path && !(x.rowEnd < a || x.rowStart > b)) delete S.annos[id];
   S.annos[res.annotation.id] = res.annotation;
@@ -1106,15 +1622,16 @@ function openFileComposer(f, mode) {
   setFold(f.path, false);
   const old = sec.querySelector('.fcomposer');
   if (old) old.remove();
+  const rewrite = mode === 'rewrite';
   const box = document.createElement('div');
-  box.className = 'fcomposer composer' + (mode === 'rewrite' ? ' is-change' : '');
+  box.className = 'fcomposer composer' + (rewrite ? ' is-change' : '');
   box.dataset.mode = mode;
-  box.innerHTML = `<div class="cmp-title">${mode === 'rewrite' ? '✗ 为什么这个文件需要重写？（可选，会交给 agent）' : '❓ 关于整个文件的问题'}</div>
-    ${chipsHTML(mode === 'rewrite' ? REWRITE_CHIPS : ASK_CHIPS)}
-    <textarea rows="2" placeholder="${mode === 'rewrite' ? '比如：抽象太多，直接写成一个函数就行' : '你的问题…'}（Ctrl/⌘+Enter 发送）"></textarea>
-    <div class="row">${mode === 'rewrite' ? '' : authorBox(false)}<span class="spacer"></span>
-      <button class="btn sm" data-act="fc-cancel">取消</button>
-      <button class="btn sm primary" data-act="fc-send">${mode === 'rewrite' ? '标记「需重写」' : '发送'}</button></div>`;
+  box.innerHTML = `<div class="cmp-title">${esc(T(rewrite ? 'fc.rewriteTitle' : 'fc.askTitle'))}</div>
+    ${chipsHTML(T(rewrite ? 'chips.rewrite' : 'chips.ask'))}
+    <textarea rows="2" placeholder="${esc(T(rewrite ? 'fc.rewritePh' : 'cmp.askPh'))}"></textarea>
+    <div class="row">${rewrite ? '' : authorBox(false)}<span class="spacer"></span>
+      <button class="btn sm" data-act="fc-cancel">${esc(T('common.cancel'))}</button>
+      <button class="btn sm primary" data-act="fc-send">${esc(T(rewrite ? 'fc.markRewrite' : 'common.send'))}</button></div>`;
   sec.querySelector('.file-threads').prepend(box);
   box.querySelector('textarea').focus();
 }
@@ -1123,8 +1640,8 @@ async function sendFileComposer(el) {
   const text = box.querySelector('textarea').value.trim();
   if (box.dataset.mode === 'rewrite') { box.remove(); return setVerdict(f, 'rewrite', text); }
   const toAuthor = box.querySelector('.to-author').checked;
-  if (toAuthor && !text) { toast('写下你想问作者的问题'); return; }
-  const res = await api('POST', '/api/ask', {file: f.path, anchor: null, question: text || '这个文件的改动整体在做什么？', ai: !toAuthor, askAuthor: toAuthor});
+  if (toAuthor && !text) { toast(T('toast.needAuthorQ')); return; }
+  const res = await api('POST', '/api/ask', {file: f.path, anchor: null, question: text || T('q.file'), ai: !toAuthor, askAuthor: toAuthor});
   box.remove();
   ingestThread(res.thread, true);
 }
@@ -1142,8 +1659,8 @@ async function setVerdict(f, state, comment) {
 }
 async function overview() {
   const existing = Object.values(S.threads).find(t => t.overview);
-  if (existing) { const el = threadEl(existing); el.scrollIntoView({block: 'start', behavior: 'smooth'}); return; }
-  const res = await api('POST', '/api/ask', {file: null, overview: true, ai: true, question: '请整体讲解一下这次改动：做了什么、为什么，以及推荐的阅读顺序。'});
+  if (existing) { threadEl(existing).scrollIntoView({block: 'start', behavior: 'smooth'}); return; }
+  const res = await api('POST', '/api/ask', {file: null, overview: true, ai: true, question: T('q.overview')});
   ingestThread(res.thread, true);
 }
 async function globalAsk(ai) {
@@ -1213,7 +1730,7 @@ function flash(el) {
 }
 function jumpTo(path, side, line) {
   const f = S.byPath[path];
-  if (!f) { toast('这个文件不在 diff 里'); return; }
+  if (!f) { toast(T('toast.notInDiff')); return; }
   const r = f.rows.find(x => side === 'old' ? x.o === line : x.n === line);
   if (!r) { viewFile(path, side, line); return; }
   setFold(path, false);
@@ -1233,17 +1750,17 @@ async function viewFile(path, side, line) {
   const cls = side === 'new' ? 'add' : 'del';
   const body = lines.map((l, k) => `<tr class="${changed.has(k + 1) ? cls : ''}" id="vf-${k + 1}"><td class="ln">${k + 1}</td><td class="code"><span class="src">${hl ? hl[k] : esc(l)}</span></td></tr>`).join('');
   const other = side === 'new' ? (f && f.status !== 'A' && S.repo.isGit ? 'old' : null) : (f && f.status !== 'D' ? 'new' : null);
-  openModal(`<div class="vf-head"><b class="mono">${esc(path)}</b><span class="chip">${side === 'new' ? '新版本' : '旧版本'}</span>
-      <span class="muted small">${changed.size ? '高亮的是改动过的行' : ''}</span>
-      ${other ? `<button class="btn xs" data-act="view-side" data-path="${esc(path)}" data-side="${other}">看${other === 'new' ? '新' : '旧'}版本</button>` : ''}
-      <span class="spacer"></span><button class="btn xs" data-act="modal-close">关闭 (Esc)</button></div>
+  openModal(`<div class="vf-head"><b class="mono">${esc(path)}</b><span class="chip">${esc(T(side === 'new' ? 'vf.new' : 'vf.old'))}</span>
+      <span class="muted small">${changed.size ? esc(T('vf.changedHint')) : ''}</span>
+      ${other ? `<button class="btn xs" data-act="view-side" data-path="${esc(path)}" data-side="${other}">${esc(T(other === 'new' ? 'vf.seeNew' : 'vf.seeOld'))}</button>` : ''}
+      <span class="spacer"></span><button class="btn xs" data-act="modal-close">${esc(T('vf.close'))}</button></div>
     <div class="vf-body"><table class="diff vf"><colgroup><col class="c-ln"><col></colgroup>${body}</table></div>`, 'wide');
   const target = line || Math.min.apply(null, changed.size ? Array.from(changed) : [0]);
   const row = target && document.getElementById('vf-' + target);
   if (row) { row.scrollIntoView({block: 'center'}); if (line) flash(row); }
 }
 function openSubmit() {
-  if ((S.rounds[S.round] || {}).submitted) { toast(`第 ${S.round} 轮已经提交了，等 agent 推送下一轮`); return; }
+  if ((S.rounds[S.round] || {}).submitted) { toast(T('sub.already', S.round)); return; }
   const ts = Object.values(S.threads);
   const changes = ts.filter(t => t.kind === 'change' && needsAuthor(t));
   const questions = ts.filter(t => t.kind !== 'change' && needsAuthor(t));
@@ -1253,21 +1770,17 @@ function openSubmit() {
   const unseen = S.files.filter(f => !S.verdicts[f.path] && !discussed.has(f.path));
   const pending = ts.some(t => t.messages.some(m => m.status === 'pending'));
   const def = changes.length || bad.length ? 'changes' : questions.length ? 'comment' : 'approve';
-  const opt = (v, title, desc) => `<label class="vopt"><input type="radio" name="verdict" value="${v}" ${v === def ? 'checked' : ''}><span><b>${title}</b><span class="muted small">${desc}</span></span></label>`;
-  openModal(`<h2>提交第 ${S.round} 轮 review</h2>
-    <div class="verdicts">
-      ${opt('approve', '✅ 通过', '看懂了，接受这次改动')}
-      ${opt('comment', '💬 只提问', '把问题交给作者回答，先不要求改代码')}
-      ${opt('changes', '↩️ 打回修改', '按我的意见改；整体太挫看不懂，就在下面写「重写」')}
-    </div>
-    <textarea id="overall" rows="4" placeholder="整体意见（可选）。比如：整体太绕了，用更直接的方式重写数据加载部分。"></textarea>
-    ${chipsHTML(OVERALL_CHIPS)}
+  const opt = v => `<label class="vopt"><input type="radio" name="verdict" value="${v}" ${v === def ? 'checked' : ''}><span><b>${esc(T('sub.' + v))}</b><span class="muted small">${esc(T('sub.' + v + 'Desc'))}</span></span></label>`;
+  openModal(`<h2>${esc(T('sub.title', S.round))}</h2>
+    <div class="verdicts">${opt('approve')}${opt('comment')}${opt('changes')}</div>
+    <textarea id="overall" rows="4" placeholder="${esc(T('sub.overallPh'))}"></textarea>
+    ${chipsHTML(T('chips.overall'))}
     <div class="sum">
-      <div>🚩 修改意见 <b>${changes.length}</b> · ❓ 给作者的问题 <b>${questions.length}</b> · ✗ 需重写的文件 <b>${bad.length}</b></div>
-      <div>✓ 看懂的文件 ${ok.length}/${S.files.length}${unseen.length ? ` · <span class="warn">还有 ${unseen.length} 个文件没看</span>` : ''}</div>
-      ${pending ? '<div class="warn">还有 AI 回答在生成中（不影响提交）</div>' : ''}
+      <div>${T('sub.counts', changes.length, questions.length, bad.length)}</div>
+      <div>${esc(T('sub.okFiles', ok.length, S.files.length))}${unseen.length ? ` · <span class="warn">${esc(T('sub.unseen', unseen.length))}</span>` : ''}</div>
+      ${pending ? `<div class="warn">${esc(T('sub.pending'))}</div>` : ''}
     </div>
-    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">取消</button><button class="btn primary" data-act="submit-review">提交</button></div>`, '', true);
+    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">${esc(T('common.cancel'))}</button><button class="btn primary" data-act="submit-review">${esc(T('sub.submit'))}</button></div>`, '', true);
   $('#overall').value = S.draftComment || '';
   $('#overall').focus();
 }
@@ -1276,58 +1789,37 @@ async function submitReview() {
   const comment = $('#overall').value.trim();
   const ts = Object.values(S.threads);
   const items = ts.filter(t => t.kind === 'change' && needsAuthor(t)).length + S.files.filter(f => (S.verdicts[f.path] || {}).state === 'rewrite').length;
-  if (verdict === 'approve' && items && !confirm(`还有 ${items} 条修改意见没处理，确定直接通过？`)) return;
-  if (verdict === 'changes' && !items && !comment && !confirm('没有写任何修改意见，确定打回？（agent 会不知道改什么）')) return;
+  if (verdict === 'approve' && items && !confirm(T('sub.confirmApprove', items))) return;
+  if (verdict === 'changes' && !items && !comment && !confirm(T('sub.confirmEmpty'))) return;
   const res = await api('POST', '/api/submit', {verdict, comment});
   S.draftComment = '';
   S.rounds[S.round] = Object.assign({}, S.rounds[S.round], {submitted: {verdict, comment, at: Date.now() / 1000}});
   renderHeader();
   renderBanners();
-  const msg = verdict === 'approve' ? '已通过 ✅ agent 会收到结果。可以关掉这个页面了。'
-    : verdict === 'comment' ? '问题已经交给作者。agent 回答完会推送下一轮，这个页面会自动刷新。'
-    : '已打回 ↩️ agent 会按你的意见修改，改完推送下一轮，这个页面会自动刷新。';
-  openModal(`<h2>第 ${res.round} 轮已提交</h2><p>${msg}</p>
-    <details><summary>交给 agent 的内容</summary><div class="md review-md">${md(res.markdown)}</div></details>
-    <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">好</button></div>`);
+  const msg = T(verdict === 'approve' ? 'sub.doneApprove' : verdict === 'comment' ? 'sub.doneComment' : 'sub.doneChanges');
+  openModal(`<h2>${esc(T('sub.doneTitle', res.round))}</h2><p>${esc(msg)}</p>
+    <details><summary>${esc(T('sub.sent'))}</summary><div class="md review-md">${md(res.markdown)}</div></details>
+    <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">${esc(T('common.ok'))}</button></div>`);
 }
 async function showReview(round) {
   const r = await api('GET', '/api/review?round=' + round);
-  openModal(`<h2>第 ${round} 轮提交的内容</h2><div class="md review-md">${md(r.markdown)}</div>
-    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">关闭</button></div>`, 'wide');
+  openModal(`<h2>${esc(T('rev.title', round))}</h2><div class="md review-md">${md(r.markdown)}</div>
+    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">${esc(T('common.close'))}</button></div>`, 'wide');
 }
 function openSettings() {
   const s = S.settings;
-  const models = MODELS.some(m => m[0] === s.model) ? MODELS : MODELS.concat([[s.model, s.model]]);
+  const models = T('set.models').some(m => m[0] === (s.model || '')) ? T('set.models') : T('set.models').concat([[s.model, s.model]]);
   const sel = (id, list, value) => `<select id="${id}">${list.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-  openModal(`<h2>设置</h2>
-    <label class="field">解释用的模型 ${sel('set-model', models, s.model || '')}</label>
-    <label class="field">思考力度 ${sel('set-effort', [['', '默认'], ['low', '低（更快）'], ['medium', '中'], ['high', '高（更细）']], s.effort || '')}</label>
-    <label class="field">解释用的语言 ${sel('set-lang', [['zh', '中文'], ['en', 'English']], s.lang || 'zh')}</label>
-    <div class="muted small">AI：${S.ai.available ? esc(S.ai.version || 'claude') : '不可用 — ' + esc(S.ai.error || '')}<br>
-      服务：${esc(S.repo.host || '')} · ${esc(S.listen.mode || '')} · ${esc(S.repo.root || '')}</div>
-    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">取消</button><button class="btn primary" data-act="save-settings">保存</button></div>`, '', true);
+  openModal(`<h2>${esc(T('set.title'))}</h2>
+    <label class="field">${esc(T('set.model'))} ${sel('set-model', models, s.model || '')}</label>
+    <label class="field">${esc(T('set.effort'))} ${sel('set-effort', T('set.efforts'), s.effort || '')}</label>
+    <p class="muted small">${esc(T('set.langHint'))}</p>
+    <div class="muted small">${esc(T('set.ai'))}${S.ai.available ? esc(S.ai.version || 'claude') : esc(T('set.unavailable') + aiError())}<br>
+      ${esc(T('set.server'))}${esc(S.repo.host || '')} · ${esc(S.listen.mode || '')} · ${esc(S.repo.root || '')}</div>
+    <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">${esc(T('common.cancel'))}</button><button class="btn primary" data-act="save-settings">${esc(T('common.save'))}</button></div>`, '', true);
 }
 function showHelp() {
-  openModal(`<h2>怎么用</h2>
-    <ol class="help">
-      <li><b>先看全局。</b>顶部「作者说明」是写代码的 agent 自己写的；点右上角「📖 整体讲解」让 AI 带你通读一遍。</li>
-      <li><b>看不懂就问。</b>点行号选中一行（Shift+点击或拖动可以选多行），然后点「💬 这段在干嘛？」或「❓ 提问…」。回答会贴在代码下面，还可以接着追问。</li>
-      <li><b>逐行讲解。</b>在 hunk 标题上点「📖 逐行讲解这段」，每几行配一句解释。</li>
-      <li><b>提意见。</b>选中代码后点「🚩 这里要改…」；整个文件不行，就点文件头的「✗ 需重写」。</li>
-      <li><b>问作者。</b>提问时勾选「交给作者回答」，或者在 AI 的回答下面点「转给作者」。写代码的 agent 知道当时为什么这么写，它会在下一轮回答。</li>
-      <li><b>提交。</b>右上角「提交 review」，选 ✅ 通过 / 💬 只提问 / ↩️ 打回修改；整体太挫看不懂，就写「重写」。agent 改完会推送下一轮，页面自动刷新。</li>
-    </ol>
-    <h3>快捷键</h3>
-    <table class="keys">
-      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>下一个 / 上一个文件</td></tr>
-      <tr><td><kbd>e</kbd></td><td>解释选中的行</td></tr>
-      <tr><td><kbd>q</kbd></td><td>对选中的行提问</td></tr>
-      <tr><td><kbd>a</kbd></td><td>逐行讲解选中的行</td></tr>
-      <tr><td><kbd>f</kbd></td><td>对选中的行提修改意见</td></tr>
-      <tr><td><kbd>Ctrl/⌘</kbd> + <kbd>Enter</kbd></td><td>发送</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>取消选择 / 关闭弹窗</td></tr>
-    </table>
-    <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">好</button></div>`);
+  openModal(T('help.html') + `<div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">${esc(T('common.ok'))}</button></div>`);
 }
 function toggleTheme() {
   const cur = document.documentElement.dataset.theme;
@@ -1362,18 +1854,19 @@ const ACTIONS = {
   'help': () => showHelp(),
   'settings': () => openSettings(),
   'theme': () => toggleTheme(),
+  'lang': () => toggleLang(),
   'open-submit': () => openSubmit(),
   'submit-review': () => submitReview(),
   'modal-close': () => closeModal(),
   'show-review': el => showReview(+el.dataset.round),
   'dismiss-banner': () => { S.newRoundBanner = null; renderBanners(); },
   'save-settings': async () => {
-    const res = await api('POST', '/api/settings', {model: $('#set-model').value, effort: $('#set-effort').value, lang: $('#set-lang').value});
+    const res = await api('POST', '/api/settings', {model: $('#set-model').value, effort: $('#set-effort').value});
     S.settings = res.settings;
     closeModal();
-    toast('已保存', 'ok');
+    toast(T('toast.saved'), 'ok');
   },
-  'sel-explain': () => askSelection(DEFAULT_Q, true, false, 'question'),
+  'sel-explain': () => askSelection(T('q.default'), true, false, 'question'),
   'sel-ask': () => openComposer('ask'),
   'sel-change': () => openComposer('change'),
   'sel-annotate': () => annotateRange(S.sel.path, S.sel.a, S.sel.b),
@@ -1401,10 +1894,15 @@ const ACTIONS = {
   't-unflag': el => threadUpdate(el, {kind: 'question'}),
   't-to-author': el => threadUpdate(el, {askAuthor: true}),
   't-not-author': el => threadUpdate(el, {askAuthor: false}),
-  't-delete': el => confirm('删除这个讨论？') && threadUpdate(el, {delete: true}),
+  't-delete': el => confirm(T('th.deleteConfirm')) && threadUpdate(el, {delete: true}),
   't-stop': el => stopThread(el),
   't-toggle': el => el.closest('.thread').classList.toggle('open'),
-  't-goto': el => { const t = S.threads[threadIdOf(el)]; if (t && t.anchor && S.byPath[t.file] && S.byPath[t.file].rowEls) { const loc = locate(t, S.byPath[t.file]); if (loc) { const r = S.byPath[t.file].rowEls[loc.start]; r.scrollIntoView({block: 'center', behavior: 'smooth'}); flash(r); return; } } if (t && t.file) gotoFile(t.file); },
+  't-goto': el => {
+    const t = S.threads[threadIdOf(el)], f = t && S.byPath[t.file];
+    const loc = t && t.anchor && f && f.rowEls ? locate(t, f) : null;
+    if (loc) { const r = f.rowEls[loc.start]; r.scrollIntoView({block: 'center', behavior: 'smooth'}); flash(r); }
+    else if (t && t.file) gotoFile(t.file);
+  },
   'anno-cancel': el => api('POST', '/api/cancel', {annoId: annoIdOf(el)}),
   'anno-delete': async el => { const id = annoIdOf(el), a = S.annos[id]; await api('POST', '/api/annotation', {id, delete: true}); delete S.annos[id]; if (a) placeExtras(a.file); },
   'anno-toggle': el => { const id = annoIdOf(el); S.hideAnno[id] = !S.hideAnno[id]; placeExtras(S.annos[id].file); },
@@ -1451,7 +1949,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === 'Escape') {
-    if (!$('#modal').hidden) { if (!$('#modal').dataset.sticky || confirm('关掉这个窗口？')) closeModal(); }
+    if (!$('#modal').hidden) { if (!$('#modal').dataset.sticky || confirm(T('modal.closeConfirm'))) closeModal(); }
     else if (typing && e.target.closest('.th-compose')) e.target.closest('.th-compose').hidden = true;
     else if (typing && e.target.closest('.fcomposer')) e.target.closest('.fcomposer').remove();
     else clearSel();
@@ -1462,7 +1960,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'j') run(() => gotoRelFile(1));
   else if (e.key === 'k') run(() => gotoRelFile(-1));
   else if (e.key === '?') run(showHelp);
-  else if (S.sel && e.key === 'e' && S.ai.available) run(() => askSelection(DEFAULT_Q, true, false, 'question'));
+  else if (S.sel && e.key === 'e' && S.ai.available) run(() => askSelection(T('q.default'), true, false, 'question'));
   else if (S.sel && e.key === 'q') run(() => openComposer('ask'));
   else if (S.sel && e.key === 'f') run(() => openComposer('change'));
   else if (S.sel && e.key === 'a' && S.ai.available) run(() => annotateRange(S.sel.path, S.sel.a, S.sel.b));
@@ -1594,8 +2092,9 @@ function md(src, ctx) {
 
 // ---------------------------------------------------------------- start
 try { const t = localStorage.getItem('dr-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage blocked */ }
+applyStatic();
 boot().then(() => setTimeout(poll, 1500)).catch(err => {
-  $('#files').innerHTML = `<div class="banner err">加载失败：${esc(err.message)}</div>`;
+  $('#files').innerHTML = `<div class="banner err">${esc(T('loadFailed', err.message))}</div>`;
   setTimeout(() => location.reload(), 5000);
 });
 </script>
