@@ -1971,6 +1971,12 @@ def print_banner(info, ping, refreshed=False, result=None):
             print("   （<登录地址> 换成你平时 ssh 登录这里用的名字，或者在这台机器上设好 DIFF_REVIEW_SSH_HOST。）")
         print("   第一次可能要过一次二次验证（MFA）、确认一次主机指纹。")
         print("   然后打开： " + page_url(info))
+        print("   打不开的话：")
+        print("     · 端口被占用（ssh 报 Address already in use，或者页面连到了旧的节点）：先关掉旧的转发，再重跑上面那条命令：")
+        print("         pkill -f -- \"-L %d:\"" % info["port"])
+        print("       还被占着的话，多半是某个 ssh 主连接带着 LocalForward，用 ssh -O exit <别名> 关掉它。")
+        print("     · ssh 报 connect failed / open failed：服务已经停了或换了节点，让 agent 重新 start，用它新给的命令。")
+        print("     · 页面提示「需要 token」：用上面带 ?token= 的完整链接。")
         print("   如果你总在 %s 上跑 Claude（比如开在 tmux 里），可以在 ssh config 里把登录用的 Host 固定到这个节点并自动带上转发，" % node)
         print("   以后 ssh 登录就自带转发、同一个链接一直能用：见 diff-review skill 的 references/remote-clusters.md「固定登录节点」。")
     if refreshed:
@@ -2116,6 +2122,7 @@ def cmd_status(opts):
         if "remote" not in info:
             info.update(node_details())
         print("  ssh:    %s" % forward_command(info))
+        print("  free:   pkill -f -- \"-L %d:\"   # 本地端口被旧的转发占着时，先在自己电脑上跑这个" % info["port"])
     print("  state:  %s" % sdir)
     return 0
 

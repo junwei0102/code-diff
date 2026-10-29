@@ -88,7 +88,7 @@ ssh -fN -J <用户>@<登录地址> -L <端口>:<socket目录>/current.sock <用�
 
 1. 在集群上运行 `status --repo <root>`：看服务在不在、在哪个节点、socket 路径，以及该用的转发命令（`ssh:` 那一行）。
 2. ssh 报 `connect failed: No such file or directory` 或 `open failed`：转发落到了别的节点。改用 `start` 或 `status` 打印的那条直连节点的命令，或者按上面「固定登录节点」配置。
-3. ssh 报 `bind [127.0.0.1]:<端口>: Address already in use`：本地端口被旧的转发占着（比如一条连在别的节点上的主连接）。先 `ssh -O exit <别名>`，或者 `pkill -f -- "-L <端口>:"`，再重跑。
+3. ssh 报 `bind [127.0.0.1]:<端口>: Address already in use`，或者页面连到了旧的节点：本地端口被旧的转发占着。先 `pkill -f -- "-L <端口>:"` 关掉旧的后台转发，再重跑。还被占着的话，用 `lsof -nP -iTCP:<端口> -sTCP:LISTEN` 看是谁占着：如果是某个 ssh 主连接（比如 ssh config 里带了 `LocalForward`），就用 `ssh -O exit <别名>` 关掉它。
 4. 浏览器显示「需要 token」：打开的是没带 `?token=` 的地址。用 `start` 或 `status` 打印的完整链接。
 5. 页面显示「AI 解释不可用」：集群上 PATH 里没有 `claude`，或者 Claude Code 没登录。重启时用 `--claude ~/.local/bin/claude`（或你的安装路径）。
 6. 日志在 `~/.cache/diff-review/<仓库>-<hash>/server.log`。
