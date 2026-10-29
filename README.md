@@ -67,23 +67,17 @@ Claude 会先写一份「作者说明」，讲清楚这次为什么这么改，�
 
 提交以后 Claude 会自动收到你的 review：改代码，逐条回复你的意见，然后推送下一轮。页面会自己刷新，它的回复就挂在对应的讨论下面。这样一轮一轮来，直到你选「通过」。
 
-## 在集群上用（Nibi / Fir 等）
+## 在集群上用（远程服务器 / HPC 集群）
 
-集群的登录节点是很多人共用的，为了安全，服务不开普通端口，而是监听一个只有你本人能访问的 Unix socket。所以你要在**自己电脑**上做一次端口转发。Claude 启动服务时会把完整命令打印出来，长这样：
+集群的登录节点是很多人共用的。为了安全，服务不开普通端口，而是监听一个只有你本人能访问的 Unix socket。所以你要在**自己电脑**上做一次端口转发，Claude 启动服务时会把完整命令打印出来，形如：
 
 ```bash
-ssh -O forward -L 21135:/run/user/<你的uid>/diff-review/current.sock nibi
+ssh -fN -L 36948:/run/user/<你的uid>/diff-review/current.sock <用户>@<服务所在节点的地址>
 ```
 
-- 这条命令会复用你已经开着的 SSH 连接，所以不会再要一次 MFA，而且一定连到 Claude 所在的那个登录节点。前提是你的 `~/.ssh/config` 开了 ControlMaster（Alliance 官方也推荐这么配）：
-  ```
-  Host nibi fir
-    ControlMaster auto
-    ControlPath ~/.ssh/cm-%r@%h:%p
-    ControlPersist 8h
-  ```
-- 转发一次就行，之后每一轮、换别的仓库都能接着用。
-- 没开 ControlMaster：把 `-O forward` 换成 `-N`，单独开一个隧道，但要确认它连到的是同一个登录节点。
+- **为什么要直接连那个节点：** 集群的登录地址后面通常有好几个登录节点，你每次 `ssh` 会落到其中随便一个，已经开着的主连接也一样。socket 只存在于服务所在的那个节点上，转发一旦走到别的节点就会失败。所以命令会直接指向那个节点；节点没有公网地址时，会经 `-J <登录地址>` 跳过去。
+- 转发一次就行，之后每一轮、换别的仓库都能接着用。第一次可能要过一次二次验证（MFA），并确认一次主机指纹。
+- **一劳永逸：** 如果你总在同一个节点上跑 Claude（比如开在 tmux 里），可以把 ssh config 固定到那个节点，并自动带上转发，同一个链接以后一直能用。做法见 [references/remote-clusters.md](references/remote-clusters.md) 的「固定登录节点」。
 - 用 VS Code 或 Cursor 远程开发：启动时加 `--listen tcp`，它们会自动帮你转发端口。
 
 计算节点、排错等更多细节见 [references/remote-clusters.md](references/remote-clusters.md)。
@@ -93,7 +87,7 @@ ssh -O forward -L 21135:/run/user/<你的uid>/diff-review/current.sock nibi
 skill 本身就是一个 git 仓库（`~/.claude/skills/diff-review`）。改完以后：
 
 1. **自己电脑**：改动 commit 之后 `git push`。其他电脑在 `~/.claude/skills/diff-review` 里 `git pull`。
-2. **集群**：在自己电脑上再跑一次 `~/.claude/skills/diff-review/scripts/install_remote.sh nibi fir`，会把本机最新的文件覆盖过去。集群上不需要能访问 GitHub。
+2. **集群**：在自己电脑上再跑一次 `~/.claude/skills/diff-review/scripts/install_remote.sh <集群1> <集群2>`，会把本机最新的文件覆盖过去。集群上不需要能访问 GitHub。
 3. **正在跑的 review 服务**：
    - 只改了网页（`ui.html`）：刷新浏览器页面就生效。
    - 改了 `diff_review.py`：先 `stop` 再 `start`，已经打开的页面会自动重新加载。

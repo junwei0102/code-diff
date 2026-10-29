@@ -19,9 +19,11 @@ if sys.version_info < (3, 7):
 
 import argparse
 import fnmatch
+import getpass
 import hashlib
 import hmac
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -1788,6 +1790,7 @@ def cmd_serve(opts):
     mode = opts.listen or ("unix" if is_remote() else "tcp")
     info = {"mode": mode, "pid": os.getpid(), "serverId": app.server_id, "host": socket.gethostname(),
             "repo": app.repo.root, "startedAt": now()}
+    info.update(node_details() if is_remote() else {"remote": False})
     if mode == "unix":
         path = os.path.join(socket_dir(), app.repo.key() + ".sock")
         if os.path.exists(path):
@@ -1851,6 +1854,91 @@ def live_server(sdir):
     return info
 
 
+def is_global_ip(ip):
+    try:
+        return ipaddress.ip_address(ip.split("%")[0]).is_global
+    except ValueError:
+        return False
+
+
+def is_local_ip(ip):
+    """True when `ip` is assigned to this machine (binding to it only works then)."""
+    probe = socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.bind((ip, 0))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def node_address():
+    """A public address of this very machine that the reviewer's computer can SSH to, or None.
+
+    Clusters usually put several login nodes behind one login address, so a new SSH
+    connection may land on a different node than the one this server runs on, while the
+    Unix socket exists only here: the forward has to name this node. Candidates are the
+    node's own DNS names (internal and public names often differ by one label, e.g.
+    login3.int.example.org and login3.example.org) and the address the current SSH session
+    came in on; one counts only if it is public and assigned to this machine."""
+    fqdn, short = socket.getfqdn(), socket.gethostname().split(".")[0]
+    domain = fqdn.split(".")[1:] if fqdn.split(".")[0] == short else []
+    names = [fqdn]
+    if len(domain) >= 3:  # drop one label, keeping at least "example.org"
+        names += [".".join([short] + domain[:i] + domain[i + 1:]) for i in range(len(domain))]
+    names += [".".join([short] + domain[i:]) for i in range(1, len(domain) - 1)]
+    for name in dict.fromkeys(names):
+        if name.endswith(".arpa"):
+            continue
+        try:
+            addresses = {entry[4][0] for entry in socket.getaddrinfo(name, None)}
+        except OSError:
+            continue
+        if any(is_global_ip(ip) and is_local_ip(ip) for ip in addresses):
+            return name
+    for ip in (os.environ.get("SSH_CONNECTION") or "").split()[2:3]:
+        if is_global_ip(ip) and is_local_ip(ip):
+            try:  # prefer its DNS name when that resolves back to it
+                name = socket.gethostbyaddr(ip)[0]
+                if ip in {entry[4][0] for entry in socket.getaddrinfo(name, None)}:
+                    return name
+            except OSError:
+                pass
+            return ip
+    return None
+
+
+def login_address():
+    """The address the reviewer logs in with, to hop from it to this node; None if unknown.
+
+    DIFF_REVIEW_SSH_HOST sets it on any site. Digital Research Alliance clusters export
+    CC_CLUSTER, and their login address is <cluster>.alliancecan.ca."""
+    if os.environ.get("DIFF_REVIEW_SSH_HOST"):
+        return os.environ["DIFF_REVIEW_SSH_HOST"]
+    cluster = os.environ.get("CC_CLUSTER")
+    return "%s.alliancecan.ca" % cluster if cluster else None
+
+
+def node_details():
+    """Where this server runs, for the SSH forwarding instructions."""
+    return {"remote": True, "user": getpass.getuser(), "node": socket.gethostname().split(".")[0],
+            "nodeAddress": node_address(), "loginAddress": login_address()}
+
+
+def forward_command(info):
+    """The SSH port forward the reviewer runs on their own computer to reach this server."""
+    port = info["port"]
+    target = info["current"] if info["mode"] == "unix" else "localhost:%d" % port
+    user = info.get("user") or getpass.getuser()
+    if info.get("nodeAddress"):  # straight to this machine
+        return "ssh -fN -L %d:%s %s@%s" % (port, target, user, info["nodeAddress"])
+    # no public address of its own: hop to it through the login address
+    login = info.get("loginAddress") or "<登录地址>"
+    jump = login if "@" in login or login.startswith("<") else "%s@%s" % (user, login)
+    return "ssh -fN -J %s -L %d:%s %s@%s" % (jump, port, target, user, info.get("node") or info.get("host"))
+
+
 def page_url(info):
     token = load_token()
     if info["mode"] == "unix":
@@ -1867,21 +1955,24 @@ def print_banner(info, ping, refreshed=False, result=None):
     print("✅ diff-review %s · %s · 第 %d 轮 · %d 个文件 (+%d −%d)" % (
         status, ping.get("name"), ping.get("round", 1), stats.get("files", 0), stats.get("additions", 0),
         stats.get("deletions", 0)))
-    alias = os.environ.get("CC_CLUSTER") or "<ssh-host>"
-    if info["mode"] == "unix":
-        port = info["port"]
-        print("   服务跑在远程机器 %s 上（Unix socket，只有你本人能连）。" % info.get("host"))
-        print("   在【你自己电脑】的终端里做一次端口转发（之后每一轮都不用再做）：")
-        print("     ssh -O forward -L %d:%s %s" % (port, info["current"], alias))
-        print("   这条复用已经打开的 ControlMaster 连接（不用再过 MFA）。没有 ControlMaster 时改用")
-        print("     ssh -N -L %d:%s %s" % (port, info["current"], alias))
-        print("   并确认它登录到的是同一个节点（%s）。" % info.get("host"))
-        print("   然后打开： " + page_url(info))
-    else:
+    if "remote" not in info:  # server.json written by an older version
+        info.update(node_details() if is_remote() else {"remote": False})
+    if not info["remote"] and info["mode"] == "tcp":
         print("   打开： " + page_url(info))
-        if is_remote():
-            print("   （远程机器上的 TCP 模式）先在自己电脑上转发端口：ssh -O forward -L {p}:localhost:{p} {a}".format(
-                p=info["port"], a=alias))
+    else:
+        node = info.get("node") or info["host"]
+        kind = "Unix socket，只有你本人能连" if info["mode"] == "unix" else "TCP 端口 %d" % info["port"]
+        print("   服务跑在 %s 上（%s）。" % (node, kind))
+        print("   集群的登录地址后面常常有好几个登录节点，新开的 SSH 连接不一定落在 %s 上，所以转发要直接连到这台机器%s。"
+              % (node, "" if info.get("nodeAddress") else "（它没有能从外面直接连的地址，所以经登录地址跳过去）"))
+        print("   在【你自己电脑】的终端里跑一次（之后每一轮都不用再跑；这条转发已经在跑就跳过）：")
+        print("     " + forward_command(info))
+        if not info.get("nodeAddress") and not info.get("loginAddress"):
+            print("   （<登录地址> 换成你平时 ssh 登录这里用的名字，或者在这台机器上设好 DIFF_REVIEW_SSH_HOST。）")
+        print("   第一次可能要过一次二次验证（MFA）、确认一次主机指纹。")
+        print("   然后打开： " + page_url(info))
+        print("   如果你总在 %s 上跑 Claude（比如开在 tmux 里），可以在 ssh config 里把登录用的 Host 固定到这个节点并自动带上转发，" % node)
+        print("   以后 ssh 登录就自带转发、同一个链接一直能用：见 diff-review skill 的 references/remote-clusters.md「固定登录节点」。")
     if refreshed:
         print("   已经打开的页面会自动刷新。")
 
@@ -2021,6 +2112,10 @@ def cmd_status(opts):
                                                     " · 已提交" if ping.get("submitted") else ""))
     print("  listen: %s" % (info.get("socket") or "127.0.0.1:%d" % info["port"]))
     print("  url:    %s" % page_url(info))
+    if info.get("remote") or info["mode"] == "unix":
+        if "remote" not in info:
+            info.update(node_details())
+        print("  ssh:    %s" % forward_command(info))
     print("  state:  %s" % sdir)
     return 0
 
