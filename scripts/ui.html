@@ -1207,7 +1207,7 @@ function rowsHTML(f) {
 }
 function buildRows(f, sec = fileSec(f.path)) {
   if (f.rowEls || !sec) return;
-  const tbody = sec.querySelector('tbody');
+  const tbody = sec.querySelector('table.diff > tbody');  // notes and threads above it can hold tables too
   tbody.innerHTML = rowsHTML(f);
   f.rowEls = [];
   for (const tr of tbody.querySelectorAll('tr.r')) f.rowEls[+tr.dataset.i] = tr;
