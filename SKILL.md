@@ -1,6 +1,6 @@
 ---
 name: diff-review
-description: 在浏览器里审 agent 写的代码改动（git diff）：起一个 web UI，逐文件看 diff；看不懂的行点一下就让 AI 逐行解释、可以追问；代码整体太挫看不懂就「打回重写」，review 结果自动交回给 agent 修改，一轮一轮直到用户通过。支持本机，也支持远程机器和 HPC 集群（Alliance / CCDB 的 Nibi、Fir、Narval、Rorqual 等，经 SSH 端口转发访问）。凡是用户想 review、看懂或批准 agent 刚做的改动，都用它——比如「review 一下你的改动」「打开 diff 界面」「我看不懂你改了什么」「逐行解释这个 diff」「改完先让我审一下」「/diff-review」，或者用户要求代码改动必须经他审核才算完。Use it whenever the user wants to review, understand, or approve code an agent changed (diff review UI, line-by-line explanations, send back for a rewrite). 不用于：自动找 bug 的代码审查（那是 /code-review）、给 GitHub PR 留评论。
+description: 在浏览器里审 agent 写的代码改动（git diff）：起一个 web UI，逐文件看 diff；看不懂的行点一下就让 AI 逐行解释、可以追问；忘了的参数、公式选中就有白话解释；代码整体太挫看不懂就「打回重写」，review 结果自动交回给 agent 修改，一轮一轮直到用户通过。支持本机，也支持远程机器和 HPC 集群（Alliance / CCDB 的 Nibi、Fir、Narval、Rorqual 等，经 SSH 端口转发访问）。凡是用户想 review、看懂或批准 agent 刚做的改动，都用它——比如「review 一下你的改动」「打开 diff 界面」「我看不懂你改了什么」「逐行解释这个 diff」「改完先让我审一下」「/diff-review」，或者用户要求代码改动必须经他审核才算完。Use it whenever the user wants to review, understand, or approve code an agent changed (diff review UI, line-by-line explanations, send back for a rewrite). 不用于：自动找 bug 的代码审查（那是 /code-review）、给 GitHub PR 留评论。
 ---
 
 # Diff Review：先让用户看懂，再让用户批准
@@ -9,7 +9,7 @@ description: 在浏览器里审 agent 写的代码改动（git diff）：起一�
 
 **你在这里是「作者」**，要做三件事：启动 UI 并写一份作者说明；等用户提交 review；按意见改代码、回答用户留给你的问题，然后推送下一轮。
 
-UI 里还有一个**解释器**。它是另起的 `claude -p`，只有只读工具，只能读这个仓库，用户提问时当场回答，不占你的上下文。解释器看不到你和用户的对话，所以它对「为什么这么改」的理解全部来自你写的作者说明。用户也可以把问题标成「问作者」，这类问题会在下一轮交给你回答，因为只有你知道当时为什么这么写。
+UI 里还有一个**解释器**。它是另起的 `claude -p`，只有只读工具，只能读这个仓库，用户提问时当场回答，不占你的上下文。用户选中一个参数、一个公式或者几行代码时，它会从最基本的讲起，弹出一段白话解释（「选中即解释」）。解释器看不到你和用户的对话，所以它对「为什么这么改」的理解全部来自你写的作者说明。用户也可以把问题标成「问作者」，这类问题会在下一轮交给你回答，因为只有你知道当时为什么这么写。
 
 下文 `<skill>` 指这个 SKILL.md 所在的目录（通常是 `~/.claude/skills/diff-review`）。所有操作都是这一个脚本，只依赖 Python ≥ 3.7 标准库和 git：
 
@@ -70,11 +70,11 @@ python3 <skill>/scripts/diff_review.py start --repo <root> --notes <notes.md> [-
 python3 <skill>/scripts/diff_review.py wait --repo <root>
 ```
 
-然后结束这一轮，用一两句话告诉用户怎么用：看不懂就点行号问 AI，看完点右上角「提交 review」，提交后你会自动接着干。如果你的环境收不到后台任务结束的通知，就请用户提交后在聊天里说一声，你再运行 `result --repo <root>` 读结果。
+然后结束这一轮，用一两句话告诉用户怎么用：看不懂就点行号问 AI；忘了某个参数、公式是什么意思，直接选中它就会弹出白话解释；看完点右上角「提交 review」，提交后你会自动接着干。如果你的环境收不到后台任务结束的通知，就请用户提交后在聊天里说一声，你再运行 `result --repo <root>` 读结果。
 
 ## 第 5 步：处理 review
 
-`wait` / `result` 打印的是一份 markdown，包括：整体意见；修改意见（带代码和讨论记录）；留给你的问题；被标成「需重写」的文件；用户需要靠解释器才看懂的代码；以及接下来要跑的命令。按结论处理：
+`wait` / `result` 打印的是一份 markdown，包括：整体意见；修改意见（带代码和讨论记录）；留给你的问题；被标成「需重写」的文件；用户需要靠解释器才看懂的代码；用户选中查过的名字和公式；以及接下来要跑的命令。按结论处理：
 
 - **APPROVED（通过）**：简短总结。可以 `stop --repo <root>` 关掉服务。到此结束。
 - **COMMENT（只提问）**：回答问题。只有回答本身说明代码确实该改时才改。
@@ -104,6 +104,7 @@ python3 <skill>/scripts/diff_review.py wait --repo <root>
 - 用户说「整体太挫 / 重写」，可以推倒重来，但只撤销**你自己写的**部分，绝不能动用户原本未提交的改动。
 - 不同意某条意见时，不要偷偷不改，也不要做表面文章（改个变量名不算改）。在 reply 里把理由讲清楚，让用户决定。
 - review 里「用户靠解释器才看懂的地方」那一节不是硬性要求，但它说明那段代码读起来费劲，顺手改清楚通常是对的。
+- 「用户选中查过的东西」那一节也不是硬性要求，多半只是用户忘了某个参数或者库函数是干嘛的。但如果你自己起的名字、写的公式出现在这里，就考虑换个说清楚意思的名字，或者加一句注释。
 
 ## 常见问题
 

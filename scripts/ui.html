@@ -195,7 +195,7 @@ tr.sel td.ln { background: var(--sel-num) !important; color: var(--fg); }
 .wd { border-radius: 3px; }
 tr.add .wd { background: var(--add-word); }
 tr.del .wd { background: var(--del-word); }
-.noeol, .cr { color: var(--fg-3); margin-left: 4px; font-size: 11px; }
+.noeol, .cr { color: var(--fg-3); margin-left: 4px; font-size: 11px; user-select: none; }
 tr.ann td.code { box-shadow: inset 3px 0 0 var(--anno-bar); }
 tr.ann-0 td.code { background-image: linear-gradient(var(--anno-0), var(--anno-0)); }
 tr.ann-1 td.code { background-image: linear-gradient(var(--anno-1), var(--anno-1)); }
@@ -233,7 +233,7 @@ tr.anno-head > td { padding-top: 4px; padding-bottom: 4px; background: var(--ai-
 .badge { font-weight: 600; }
 .b-change { color: var(--warn); }
 .b-q { color: var(--accent); }
-.b-ov { color: var(--ai); }
+.b-ov, .b-lk { color: var(--ai); }
 .thread.outdated .th-head::after { content: "代码已变，原位置找不到了"; color: var(--fg-3); font-size: 11.5px; }
 :lang(en) .thread.outdated .th-head::after { content: "code changed; its original spot is gone"; }
 .th-msgs { padding: 2px 12px; }
@@ -255,6 +255,19 @@ details.old-ai > summary { cursor: pointer; font-size: 12px; font-weight: 650; c
 .thread.resolved.open .th-msgs { display: block; }
 .thread.resolved.open .th-foot { display: flex; }
 .thread.resolved .th-head { border-bottom: 0; }
+
+/* select-to-explain: a popover explaining the selected text in plain words */
+#lookup { position: absolute; z-index: 45; display: flex; flex-direction: column; max-height: min(60vh, 520px); background: var(--bg); border: 1px solid var(--ai); border-radius: 10px; box-shadow: var(--shadow); font: 13.5px/1.6 var(--sans); }
+.lk-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; background: var(--ai-soft); border-bottom: 1px solid var(--border-2); border-radius: 10px 10px 0 0; flex-wrap: wrap; }
+.lk-term { font: 12.5px var(--mono); padding: 0 6px; border: 1px solid var(--border-2); border-radius: 4px; background: var(--bg); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lk-where { font-size: 12px; color: var(--fg-2); }
+.lk-acts { margin-left: auto; display: flex; gap: 2px; }
+.lk-msgs { flex: 1; min-height: 0; overflow: auto; padding: 2px 12px; }
+.lk-tip { padding: 0 12px 4px; font-size: 11.5px; color: var(--fg-3); }
+.lk-foot { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-top: 1px solid var(--border-2); }
+.lk-input { flex: 1; min-width: 0; padding: 3px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+#lk-btn { position: absolute; z-index: 45; padding: 1px 10px; border: 1px solid var(--ai); border-radius: 999px; background: var(--bg); color: var(--ai); font: 12.5px/1.6 var(--sans); box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; }
+#lk-btn:hover { background: var(--ai-soft); }
 
 /* markdown */
 .md { line-height: 1.65; overflow-wrap: anywhere; }
@@ -310,6 +323,7 @@ a.lref:hover { text-decoration: none; background: var(--accent-soft); }
 .sum .warn { color: var(--warn); }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-weight: 600; font-size: 13px; }
 .field select { font-weight: 400; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.modal .chk { font-size: 13px; color: var(--fg); font-weight: 600; }
 .help li { margin-bottom: 6px; }
 table.keys td { padding: 2px 12px 2px 0; }
 .vf-head { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; flex-wrap: wrap; }
@@ -397,7 +411,7 @@ const I18N = {
     'hdr.files': n => `${n} 个文件`,
     'doc.title': (name, n) => `${name} · 第${n}轮 · Diff Review`,
     'side.filter': '筛选文件…',
-    'side.foot': '点行号选行 · Shift/拖动 多选 · j/k 换文件 · ? 帮助',
+    'side.foot': '点行号选行 · Shift/拖动 多选 · 选中文字看白话解释 · j/k 换文件 · ? 帮助',
     'side.noMatch': '没有匹配的文件',
     'side.progress': (ok, n) => `已看懂 <b>${ok}</b>/${n}`,
     'side.untracked': '未跟踪的新文件',
@@ -465,6 +479,7 @@ const I18N = {
     'badge.overview': '📖 整体讲解',
     'badge.change': '🚩 要改',
     'badge.question': '💬 提问',
+    'badge.lookup': '💡 白话解释',
     'chip.goneFile': '文件已不在 diff 里',
     'chip.askAuthor': '问作者',
     'chip.waitAuthor': '等作者处理',
@@ -510,6 +525,16 @@ const I18N = {
     'sel.change': '🚩 这里要改…',
     'sel.hint': 'Shift+点行号扩选 · Esc 取消',
     'key': k => `快捷键 ${k}`,
+    'lk.question': s => s.length <= 60 && !s.includes('\n') ? `「${s}」是什么意思？` : '选中的这段是什么意思？',
+    'lk.inText': '解释里的词',
+    'lk.pin': '📌 留在页面上',
+    'lk.pinTip': '存成一条讨论贴在代码下面，之后还能追问、转给作者或者标成要改',
+    'lk.closeTip': '关闭（Esc）',
+    'lk.backTip': '回到上一个解释',
+    'lk.followPh': '还是不懂？接着问…（Enter 发送）',
+    'lk.tip': '解释里还有不懂的词？选中它接着查。',
+    'lk.btn': '💡 白话解释',
+    'lk.btnTip': '让 AI 用大白话解释选中的内容',
     'cmp.changeTitle': '🚩 这段要怎么改？（打回时交给 agent）',
     'cmp.askTitle': l => `❓ 关于 ${l} 的问题`,
     'cmp.changePh': '写下你希望的改法…（Ctrl/⌘+Enter 发送）',
@@ -567,6 +592,8 @@ const I18N = {
     'set.effort': '思考力度',
     'set.efforts': [['', '默认'], ['low', '低（更快）'], ['medium', '中'], ['high', '高（更细）']],
     'set.langHint': '界面语言和 AI 回答的语言，用右上角的 EN / 中文 按钮切换。',
+    'set.autoLookup': '选中代码或解释里的文字后，自动弹出白话解释',
+    'set.autoLookupHint': '关掉以后，选中文字只会先出一个「💡 白话解释」按钮，点了才去问 AI。每次解释都会用掉一点 Claude 额度。',
     'set.ai': 'AI：',
     'set.unavailable': '不可用 — ',
     'set.server': '服务：',
@@ -583,6 +610,7 @@ const I18N = {
       <ol class="help">
         <li><b>先看全局。</b>顶部「作者说明」是写代码的 agent 自己写的；点右上角「📖 整体讲解」让 AI 带你通读一遍。</li>
         <li><b>看不懂就问。</b>点行号选中一行（Shift+点击或拖动可以选多行），然后点「💬 这段在干嘛？」或「❓ 提问…」。回答会贴在代码下面，还可以接着追问。</li>
+        <li><b>忘了某个参数、公式是什么意思？</b>直接用鼠标选中它：双击一个词，或者拖选一个表达式、几行代码。旁边会弹出一段白话解释，从最基本的讲起。代码、AI 的回答、作者说明里都能选；解释里还有不懂的词，接着选就行。想留着就点「📌 留在页面上」。</li>
         <li><b>逐行讲解。</b>在 hunk 标题上点「📖 逐行讲解这段」，每几行配一句解释。</li>
         <li><b>提意见。</b>选中代码后点「🚩 这里要改…」；整个文件不行，就点文件头的「✗ 需重写」。</li>
         <li><b>问作者。</b>提问时勾选「交给作者回答」，或者在 AI 的回答下面点「转给作者」。写代码的 agent 知道当时为什么这么写，它会在下一轮回答。</li>
@@ -618,7 +646,7 @@ const I18N = {
     'hdr.files': n => `${n} file${plural(n)}`,
     'doc.title': (name, n) => `${name} · round ${n} · Diff Review`,
     'side.filter': 'Filter files…',
-    'side.foot': 'Click line numbers to select · Shift/drag for more · j/k files · ? help',
+    'side.foot': 'Click line numbers to select · Shift/drag for more · select text for a plain explanation · j/k files · ? help',
     'side.noMatch': 'No matching files',
     'side.progress': (ok, n) => `Understood <b>${ok}</b>/${n}`,
     'side.untracked': 'New untracked file',
@@ -686,6 +714,7 @@ const I18N = {
     'badge.overview': '📖 Overview',
     'badge.change': '🚩 Change',
     'badge.question': '💬 Question',
+    'badge.lookup': '💡 Plain explanation',
     'chip.goneFile': 'file no longer in the diff',
     'chip.askAuthor': 'for the author',
     'chip.waitAuthor': 'awaiting the author',
@@ -731,6 +760,16 @@ const I18N = {
     'sel.change': '🚩 Needs change…',
     'sel.hint': 'Shift+click to extend · Esc to cancel',
     'key': k => `Shortcut: ${k}`,
+    'lk.question': s => s.length <= 60 && !s.includes('\n') ? `What does “${s}” mean?` : 'What does the selected part mean?',
+    'lk.inText': 'a word in an explanation',
+    'lk.pin': '📌 Keep on the page',
+    'lk.pinTip': 'Save it as a thread under the code, where you can follow up, ask the author or flag it',
+    'lk.closeTip': 'Close (Esc)',
+    'lk.backTip': 'Back to the previous explanation',
+    'lk.followPh': 'Still unclear? Ask a follow-up… (Enter to send)',
+    'lk.tip': "Still a word you don't know? Select it to look it up too.",
+    'lk.btn': '💡 Explain simply',
+    'lk.btnTip': 'Have the AI explain the selection in plain words',
     'cmp.changeTitle': '🚩 How should this change? (goes to the agent when you send it back)',
     'cmp.askTitle': l => `❓ Question about ${l}`,
     'cmp.changePh': 'Describe how you want it changed… (Ctrl/⌘+Enter to send)',
@@ -788,6 +827,8 @@ const I18N = {
     'set.effort': 'Reasoning effort',
     'set.efforts': [['', 'Default'], ['low', 'Low (faster)'], ['medium', 'Medium'], ['high', 'High (more thorough)']],
     'set.langHint': 'The EN / 中文 button (top right) switches the page and the AI answers between English and Chinese.',
+    'set.autoLookup': 'Explain selected text automatically (in the code or in an explanation)',
+    'set.autoLookupHint': 'When off, selecting text only shows a “💡 Explain simply” button, and the AI is asked when you click it. Each explanation uses some Claude quota.',
     'set.ai': 'AI: ',
     'set.unavailable': 'unavailable — ',
     'set.server': 'Server: ',
@@ -804,6 +845,7 @@ const I18N = {
       <ol class="help">
         <li><b>Start with the big picture.</b> The author's notes at the top were written by the agent that made the change; “📖 Overview” (top right) has the AI walk you through it.</li>
         <li><b>Ask whenever something is unclear.</b> Click a line number to select a line (Shift+click or drag for more), then “💬 What does this do?” or “❓ Ask…”. The answer appears right under the code, and you can follow up.</li>
+        <li><b>Forgot what a parameter or a formula means?</b> Just select it: double-click a word, or drag over an expression or a few lines. A plain-language explanation pops up next to it, starting from the basics. This works in the code, in AI answers and in the author's notes; if the explanation uses a word you don't know, select that too. “📌 Keep on the page” keeps it.</li>
         <li><b>Line-by-line walkthrough.</b> “📖 Walk through this hunk” on a hunk header adds a short note to every few lines.</li>
         <li><b>Request changes.</b> Select code, then “🚩 Needs change…”; if a whole file is bad, use “✗ Needs rewrite” in its header.</li>
         <li><b>Ask the author.</b> Tick “Let the author answer” when you ask, or click “Ask the author” under an AI answer. The agent that wrote the code knows why it wrote it that way and answers in the next round.</li>
@@ -863,6 +905,7 @@ const S = {
   repo: {}, ai: {available: false}, listen: {}, stats: {}, files: [], byPath: {}, notes: {summary: '', files: {}}, skipped: [],
   threads: {}, annos: {}, verdicts: {}, threadEls: {}, sel: null, composer: null, actbar: null,
   collapsed: {}, hideAnno: {}, connected: true, booted: false, newRoundBanner: null, draftComment: '',
+  features: [], lookup: null, lookupPick: null,
 };
 const GENERATED = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|Pipfile\.lock)$|\.min\.(js|css)$|\.map$/;
 const EXT_LANG = {
@@ -892,7 +935,10 @@ async function boot() {
   const y = S.booted ? window.scrollY : 0;
   const data = await api('GET', '/api/bootstrap');
   Object.assign(S, {serverId: data.serverId, diffVersion: data.diffVersion, repo: data.repo, ai: data.ai,
-                    listen: data.listen, stats: data.stats, files: data.files, skipped: data.skipped, notes: data.notes});
+                    listen: data.listen, stats: data.stats, files: data.files, skipped: data.skipped, notes: data.notes,
+                    features: data.features || []});
+  closeLookup(true);
+  hideLookupBtn();
   S.byPath = {};
   S.files.forEach(prepFile);
   Object.assign(S, {threads: {}, annos: {}, threadEls: {}, sel: null, composer: null, actbar: null});
@@ -911,8 +957,10 @@ function rerender() {  // everything again, e.g. after switching the language
   const y = window.scrollY;
   for (const f of S.files) { f.rowEls = null; f.painted = false; }
   Object.assign(S, {threadEls: {}, sel: null, composer: null, actbar: null});
+  hideLookupBtn();
   renderAll();
   window.scrollTo(0, y);
+  renderLookup();
 }
 
 function applyState(st, initial) {
@@ -921,13 +969,15 @@ function applyState(st, initial) {
   S.verdicts = st.verdicts || {};
   const touched = new Set();
   for (const id of st.deleted || []) {
-    if (S.threads[id]) { touched.add(S.threads[id].file); delete S.threads[id]; dropThreadEl(id); }
+    // A lookup that only lived in its popover was never on the page: re-placing the file's threads
+    // for it would only wipe out a text selection inside them.
+    if (S.threads[id]) { if (!floating(S.threads[id])) touched.add(S.threads[id].file); delete S.threads[id]; dropThreadEl(id); }
     if (S.annos[id]) { touched.add(S.annos[id].file); delete S.annos[id]; }
   }
   for (const [id, t] of Object.entries(st.threads || {})) {
     const old = S.threads[id];
     S.threads[id] = t;
-    if (initial) continue;
+    if (initial || floating(t)) continue;  // a lookup lives in its popover until it is pinned
     if (!old || !S.threadEls[id]) touched.add(t.file); else updateThreadEl(t);
   }
   for (const [id, a] of Object.entries(st.annotations || {})) {
@@ -938,6 +988,7 @@ function applyState(st, initial) {
   }
   if (initial) return;
   touched.forEach(placeExtras);
+  if (S.lookup) renderLookup();
   if (verdictsChanged) S.files.forEach(f => refreshFileHead(f));
   renderSidebar();
   renderHeader();
@@ -983,7 +1034,8 @@ function langOf(path) {
 }
 const fileSec = path => S.byPath[path] ? document.getElementById('file-' + S.byPath[path].idx) : null;
 const fileOf = el => S.byPath[el.closest('section.file').dataset.path];
-const threadsOf = path => Object.values(S.threads).filter(t => t.file === path).sort(byId);
+const floating = t => !!t.lookup && !t.pinned;  // a select-to-explain lookup that only shows in its popover
+const threadsOf = path => Object.values(S.threads).filter(t => t.file === path && !floating(t)).sort(byId);
 const annosOf = path => Object.values(S.annos).filter(a => a.file === path).sort(byId);
 const isGlobal = t => !t.file || !S.byPath[t.file];
 function needsAuthor(t) {
@@ -1087,7 +1139,7 @@ function renderSidebar() {
   const items = S.files.filter(f => !q || f.path.toLowerCase().includes(q)).map(fileItemHTML).join('');
   $('#filelist').innerHTML = items || `<div class="muted small pad">${esc(T('side.noMatch'))}</div>`;
   const ok = S.files.filter(f => (S.verdicts[f.path] || {}).state === 'ok').length;
-  const open = Object.values(S.threads).filter(t => !t.resolved);
+  const open = Object.values(S.threads).filter(t => !t.resolved && !floating(t));
   const changes = open.filter(t => t.kind === 'change').length;
   $('#progress').innerHTML = T('side.progress', ok, S.files.length) + (changes ? ` · 🚩 ${changes}` : '') + (open.length - changes ? ` · 💬 ${open.length - changes}` : '');
   markActive();
@@ -1365,7 +1417,7 @@ function insertAfterRow(f, i, tr) {
 function placeGlobalThreads() {
   const box = $('#global-threads');
   if (!box) return;
-  const list = Object.values(S.threads).filter(isGlobal).sort((a, b) => (b.overview - a.overview) || byId(a, b));
+  const list = Object.values(S.threads).filter(t => isGlobal(t) && !floating(t)).sort((a, b) => (b.overview - a.overview) || byId(a, b));
   box.innerHTML = '';
   for (const t of list) box.appendChild(threadEl(t));
 }
@@ -1401,6 +1453,7 @@ function dropThreadEl(id) {
 function threadHeadHTML(t) {
   const kind = t.overview ? `<span class="badge b-ov">${esc(T('badge.overview'))}</span>`
     : t.kind === 'change' ? `<span class="badge b-change">${esc(T('badge.change'))}</span>`
+    : t.lookup ? `<span class="badge b-lk">${esc(T('badge.lookup'))}</span>`
     : `<span class="badge b-q">${esc(T('badge.question'))}</span>`;
   let where = '';
   if (t.file) where = `<a class="where" href="#" data-act="t-goto">${esc(t.file.split('/').pop())} ${esc(t.anchor ? anchorLabel(t) : T('lbl.wholeFileParen'))}</a>`;
@@ -1476,6 +1529,7 @@ function placeAnno(f, a) {
     const tr = document.createElement('tr');
     tr.className = 'anno-row';
     tr.dataset.anno = a.id;
+    Object.assign(tr.dataset, {from: it.from, to: it.to});  // the rows a word selected in this note is about
     tr.innerHTML = `<td colspan="3"><div class="anno-note"><span class="anno-rng">${esc(rangeLabel(f, it.from, it.to))}</span><div class="md">${md(it.note, f.path)}</div></div></td>`;
     insertAfterRow(f, it.to, tr);
   });
@@ -1813,6 +1867,8 @@ function openSettings() {
   openModal(`<h2>${esc(T('set.title'))}</h2>
     <label class="field">${esc(T('set.model'))} ${sel('set-model', models, s.model || '')}</label>
     <label class="field">${esc(T('set.effort'))} ${sel('set-effort', T('set.efforts'), s.effort || '')}</label>
+    <label class="chk"><input type="checkbox" id="set-auto-lookup" ${autoLookup() ? 'checked' : ''}> ${esc(T('set.autoLookup'))}</label>
+    <p class="muted small">${esc(T('set.autoLookupHint'))}</p>
     <p class="muted small">${esc(T('set.langHint'))}</p>
     <div class="muted small">${esc(T('set.ai'))}${S.ai.available ? esc(S.ai.version || 'claude') : esc(T('set.unavailable') + aiError())}<br>
       ${esc(T('set.server'))}${esc(S.repo.host || '')} · ${esc(S.listen.mode || '')} · ${esc(S.repo.root || '')}</div>
@@ -1861,6 +1917,7 @@ const ACTIONS = {
   'show-review': el => showReview(+el.dataset.round),
   'dismiss-banner': () => { S.newRoundBanner = null; renderBanners(); },
   'save-settings': async () => {
+    try { localStorage.setItem('dr-auto-lookup', $('#set-auto-lookup').checked ? '1' : '0'); } catch (e) { /* storage blocked */ }
     const res = await api('POST', '/api/settings', {model: $('#set-model').value, effort: $('#set-effort').value});
     S.settings = res.settings;
     closeModal();
@@ -1907,6 +1964,11 @@ const ACTIONS = {
   'anno-delete': async el => { const id = annoIdOf(el), a = S.annos[id]; await api('POST', '/api/annotation', {id, delete: true}); delete S.annos[id]; if (a) placeExtras(a.file); },
   'anno-toggle': el => { const id = annoIdOf(el); S.hideAnno[id] = !S.hideAnno[id]; placeExtras(S.annos[id].file); },
   'anno-redo': el => { const a = S.annos[annoIdOf(el)]; return annotateRange(a.file, a.rowStart, a.rowEnd); },
+  'lk-open': () => S.lookupPick && openLookup(S.lookupPick),
+  'lk-close': () => closeLookup(),
+  'lk-back': () => lookupBack(),
+  'lk-pin': () => pinLookup(),
+  'lk-send': () => lookupFollowup(),
 };
 
 document.addEventListener('click', e => {
@@ -1928,6 +1990,7 @@ $('#files').addEventListener('mousedown', e => {
   const ln = e.target.closest('td.ln[data-i]');
   if (!ln || e.button !== 0) return;
   e.preventDefault();
+  window.getSelection().removeAllRanges();  // selecting lines, not text: don't explain an old text selection
   dragging = ln.closest('section.file').dataset.path;
   selectRow(dragging, +ln.dataset.i, e.shiftKey);
 });
@@ -1942,6 +2005,10 @@ $('#modal').addEventListener('input', e => { if (e.target.id === 'overall') S.dr
 $('#filter').addEventListener('input', renderSidebar);
 document.addEventListener('keydown', e => {
   const typing = e.target.matches && e.target.matches('input, textarea, select');
+  if (e.key === 'Enter' && typing && e.target.matches('.lk-input')) {
+    if (!e.isComposing && e.keyCode !== 229) { e.preventDefault(); lookupFollowup().catch(err => toast(err.message)); }
+    return;
+  }
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && typing) {
     const box = e.target.closest('.composer, .th-compose, .ask-global, .modal');
     const btn = box && box.querySelector('.btn.primary');
@@ -1950,6 +2017,7 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'Escape') {
     if (!$('#modal').hidden) { if (!$('#modal').dataset.sticky || confirm(T('modal.closeConfirm'))) closeModal(); }
+    else if (S.lookup || S.lookupPick) { closeLookup(); hideLookupBtn(); }
     else if (typing && e.target.closest('.th-compose')) e.target.closest('.th-compose').hidden = true;
     else if (typing && e.target.closest('.fcomposer')) e.target.closest('.fcomposer').remove();
     else clearSel();
@@ -1977,6 +2045,236 @@ function markActive() {
   const path = (cur || $('section.file') || {dataset: {}}).dataset.path;
   $$('#filelist .fi').forEach(a => a.classList.toggle('active', a.dataset.path === path));
 }
+
+// ---------------------------------------------------------------- select-to-explain
+// Select a name, a formula or a few lines of code (or a word in an explanation) and a popover explains
+// it in plain words. Each lookup is a thread with `lookup` set; it stays in the popover unless pinned.
+const LOOKUP_MAX = 600;  // the most the server takes
+const LOOKUP_TEXT = '.card.notes .md, .file-note .md, .anno-note .md, .thread .msg.r-ai .md, .thread .msg.r-author .md, #lookup .msg.r-ai .md';
+const elOf = node => node && (node.nodeType === 1 ? node : node.parentElement);
+const lookupTop = () => S.lookup && S.lookup.stack[S.lookup.stack.length - 1];
+// The popover's title already says what was asked, so it leaves out the generated first question.
+const lookupView = t => Object.assign({}, t, {messages: t.messages.filter((m, k) => k > 0 || m.role !== 'user')});
+function autoLookup() {
+  try { return localStorage.getItem('dr-auto-lookup') !== '0'; } catch (e) { return true; }
+}
+// The diff rows a selection covers, and the code selected in them.
+function codePick(range) {
+  const first = elOf(range.startContainer);
+  const tr0 = first && first.closest('section.file table.diff > tbody > tr');
+  const f = tr0 && S.byPath[tr0.closest('section.file').dataset.path];
+  if (!f) return null;
+  const rows = [], text = [];
+  for (let tr = tr0; tr; tr = tr.nextElementSibling) {
+    const node = tr.matches('tr.r') ? tr.querySelector('.src') : tr;
+    const part = document.createRange();
+    part.selectNodeContents(node);
+    if (range.compareBoundaryPoints(Range.START_TO_END, part) <= 0) break;  // the row starts after the selection
+    if (range.compareBoundaryPoints(Range.END_TO_START, part) >= 0) continue;  // it ends before the selection
+    if (node === tr || rows.length >= 100) return null;  // reaches into a thread, a walkthrough note or a hunk header
+    if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
+    if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
+    rows.push(+tr.dataset.i);
+    text.push(part.toString());
+  }
+  if (!rows.length) return null;
+  return {source: 'code', text: text.join('\n'), file: f.path, anchor: makeAnchor(f, rows[0], rows[rows.length - 1])};
+}
+// A word selected in an explanation or a note: the passage around it, and the code that passage is about.
+function textPick(range, text) {
+  const a = elOf(range.startContainer), scope = a && a.closest(LOOKUP_TEXT);
+  if (!scope || !scope.contains(range.endContainer)) return null;
+  const block = a.closest('p, li, th, td, pre, blockquote');
+  const passage = block && scope.contains(block) && block.contains(range.endContainer) ? block : scope;
+  const pick = {source: 'text', text, context: passage.textContent.trim().slice(0, 1500), file: null, anchor: null};
+  const th = scope.closest('[data-thread]'), anno = scope.closest('tr.anno-row'), sec = scope.closest('section.file');
+  if (scope.closest('#lookup')) {
+    const top = lookupTop();
+    if (!top || !top.id) return null;
+    Object.assign(pick, {file: top.file, anchor: top.anchor, parent: top.id});
+  } else if (th && S.threads[th.dataset.thread]) {
+    const t = S.threads[th.dataset.thread];
+    Object.assign(pick, {file: t.file, anchor: t.anchor});
+  } else if (anno && S.annos[anno.dataset.anno]) {
+    const f = S.byPath[S.annos[anno.dataset.anno].file];
+    if (f) Object.assign(pick, {file: f.path, anchor: makeAnchor(f, +anno.dataset.from, +anno.dataset.to)});
+  } else if (sec) pick.file = sec.dataset.path;
+  if (pick.file && !S.byPath[pick.file]) Object.assign(pick, {file: null, anchor: null});
+  return pick;
+}
+function readSelection() {
+  const sel = window.getSelection(), active = document.activeElement;
+  if (!sel || sel.isCollapsed || !sel.rangeCount || (active && active.matches('input, textarea'))) return null;
+  const range = sel.getRangeAt(0);
+  const pick = codePick(range) || textPick(range, sel.toString());
+  if (!pick) return null;
+  pick.text = pick.text.replace(/\u00a0/g, ' ').trim();
+  if (!pick.text || pick.text.length > LOOKUP_MAX || /^[\s()[\]{},.;:'"`]+$/.test(pick.text)) return null;
+  const box = range.getBoundingClientRect(), rects = range.getClientRects(), end = rects[rects.length - 1] || box;
+  pick.rect = {top: box.top + scrollY, bottom: box.bottom + scrollY, left: box.left + scrollX,
+               endX: end.right + scrollX, endY: end.bottom + scrollY};
+  return pick;
+}
+
+async function openLookup(pick) {
+  hideLookupBtn();
+  const top = lookupTop();
+  if (!(pick.parent && top && top.id === pick.parent)) {  // a word picked inside the popover stacks on top instead
+    closeLookup();
+    S.lookup = {stack: [], rect: pick.rect, above: null};
+  }
+  const L = S.lookup, item = {id: null, text: pick.text, file: pick.file, anchor: pick.anchor, source: pick.source};
+  L.stack.push(item);
+  renderLookup();
+  try {
+    const res = await api('POST', '/api/ask', {file: pick.file, anchor: pick.anchor, question: T('lk.question', pick.text), ai: true,
+                                               lookup: {text: pick.text, source: pick.source, context: pick.context || ''}});
+    S.threads[res.thread.id] = res.thread;
+    item.id = res.thread.id;
+    if (S.lookup !== L || !L.stack.includes(item)) { dropUnfinished(item.id); return; }  // closed while asking
+    S.jobs = Math.max(S.jobs, 1);
+  } catch (err) {
+    item.error = err.message;
+  }
+  renderLookup();
+}
+function closeLookup(keepJobs) {
+  const L = S.lookup, el = $('#lookup');
+  S.lookup = null;
+  if (el) el.remove();
+  if (L && !keepJobs) L.stack.forEach(item => dropUnfinished(item.id));
+}
+// A lookup closed before its answer came isn't worth the tokens: stop it, and the server drops it.
+function dropUnfinished(id) {
+  const t = id && S.threads[id], m = t && !t.pinned && t.messages.find(x => x.status === 'pending');
+  if (m) api('POST', '/api/cancel', {threadId: t.id, msgId: m.id, drop: true}).catch(() => {});
+}
+function lookupBack() {
+  const L = S.lookup;
+  if (!L || L.stack.length < 2) return;
+  dropUnfinished(L.stack.pop().id);
+  renderLookup();
+}
+async function pinLookup() {
+  const item = lookupTop();
+  if (!item || !item.id) return;
+  const res = await api('POST', '/api/thread', {id: item.id, pinned: true});
+  S.threads[item.id] = res.thread;
+  closeLookup();
+  ingestThread(res.thread, true);
+}
+async function lookupFollowup() {
+  const item = lookupTop(), t = item && S.threads[item.id], input = $('#lookup .lk-input');
+  const q = input ? input.value.trim() : '';
+  if (!t || !q || t.messages.some(m => m.status === 'pending')) return;
+  const res = await api('POST', '/api/ask', {threadId: t.id, question: q, ai: true});
+  input.value = '';
+  S.threads[t.id] = res.thread;
+  S.jobs = Math.max(S.jobs, 1);
+  renderLookup();
+  const box = $('#lookup .lk-msgs');
+  if (box) box.scrollTop = box.scrollHeight;
+}
+function renderLookup() {
+  const L = S.lookup, item = lookupTop();
+  if (!item) return;
+  const t = item.id ? S.threads[item.id] : null;
+  if (item.id && !t) { closeLookup(true); return; }  // deleted meanwhile, e.g. in another tab
+  let el = $('#lookup');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'lookup';
+    el.setAttribute('role', 'dialog');
+    el.innerHTML = `<div class="lk-head"></div><div class="lk-msgs"></div><div class="lk-tip"></div>
+      <div class="lk-foot"><input class="lk-input" type="text" autocomplete="off"><button class="btn xs primary" data-act="lk-send"></button></div>`;
+    document.body.appendChild(el);
+  }
+  const head = el.querySelector('.lk-head'), html = lookupHeadHTML(item, L.stack[L.stack.length - 2], t);
+  if (head._html !== html) { head.innerHTML = html; head._html = html; }  // don't swap a button out from under a click
+  const box = el.querySelector('.lk-msgs'), key = item.error ? 'error' : item.id || 'asking';
+  if (box.dataset.key !== key) { box.innerHTML = ''; box.dataset.key = key; }
+  if (item.error) box.innerHTML = `<div class="msg"><div class="err">❌ ${esc(item.error)}</div></div>`;
+  else if (!t) box.innerHTML = `<div class="msg"><div class="pending"><span class="spin"></span> ${esc(T('msg.thinking'))}</div></div>`;
+  else renderMsgs(box, lookupView(t));
+  const busy = !t || t.messages.some(m => m.status === 'pending');
+  const tip = el.querySelector('.lk-tip'), input = el.querySelector('.lk-input'), send = el.querySelector('[data-act="lk-send"]');
+  tip.textContent = T('lk.tip');
+  tip.hidden = busy;
+  input.placeholder = T('lk.followPh');
+  input.disabled = !t;
+  send.textContent = T('common.send');
+  send.disabled = busy;
+  positionLookup();
+}
+function lookupHeadHTML(item, prev, t) {
+  const where = !item.file ? T('lbl.aboutWhole')
+    : `${item.file.split('/').pop()} ${item.anchor ? anchorLabel({anchor: item.anchor}) : T('lbl.wholeFileParen')}`;
+  const btn = (act, label, tip) => `<button class="btn xs ghost" data-act="${act}" title="${esc(tip)}">${esc(label)}</button>`;
+  return `${prev ? btn('lk-back', '← ' + trunc(prev.text, 20), T('lk.backTip')) : ''}
+    <span class="lk-term" title="${esc(item.text)}">💡 ${esc(trunc(item.text, 60))}</span>
+    <span class="lk-where">${esc(where + (item.source === 'text' ? ' · ' + T('lk.inText') : ''))}</span>
+    <span class="lk-acts">${t ? btn('lk-pin', T('lk.pin'), T('lk.pinTip')) : ''}${btn('lk-close', '✕', T('lk.closeTip'))}</span>`;
+}
+function positionLookup() {
+  const el = $('#lookup'), L = S.lookup;
+  if (!el || !L) return;
+  const vw = document.documentElement.clientWidth, w = Math.min(560, vw - 32);
+  el.style.width = w + 'px';
+  el.style.left = Math.max(16, Math.min(L.rect.left, vw - w - 16)) + 'px';
+  if (L.above === null) {  // decided once, so the popover doesn't jump around while the answer streams in
+    const below = scrollY + innerHeight - L.rect.bottom - 16, above = L.rect.top - scrollY - 52 - 16;  // 52: the header
+    L.above = below < 320 && above > below;
+    L.room = Math.max(200, Math.min(520, innerHeight * 0.6, L.above ? above : below));  // fits on screen as opened
+  }
+  el.style.maxHeight = L.room + 'px';
+  el.style.top = Math.max(0, L.above ? L.rect.top - el.offsetHeight - 8 : L.rect.bottom + 8) + 'px';
+}
+// With automatic explanations off, a selection first gets this button.
+function showLookupBtn(pick) {
+  hideLookupBtn();
+  const b = document.createElement('button');
+  b.id = 'lk-btn';
+  b.dataset.act = 'lk-open';
+  b.textContent = T('lk.btn');
+  b.title = T('lk.btnTip');
+  document.body.appendChild(b);
+  b.style.left = Math.max(8, Math.min(pick.rect.endX + 4, document.documentElement.clientWidth - b.offsetWidth - 8)) + 'px';
+  b.style.top = pick.rect.endY + 4 + 'px';
+  S.lookupPick = pick;
+}
+function hideLookupBtn() {
+  const b = $('#lk-btn');
+  if (b) b.remove();
+  S.lookupPick = null;
+}
+let selDirty = false, mouseHeld = false, settleTimer = null;
+function settleSoon(ms) {
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(settleSelection, ms);
+}
+function settleSelection() {
+  if (!selDirty) return;
+  selDirty = false;
+  if (!S.booted || !S.ai.available || !S.features.includes('lookup')) return;
+  const pick = readSelection();
+  if (!pick) return;
+  if (autoLookup()) openLookup(pick).catch(err => toast(err.message));
+  else showLookupBtn(pick);
+}
+// A selection counts once it stops changing: on mouse up (after a possible double or triple click),
+// or a moment after the last change made with the keyboard or a touch screen.
+document.addEventListener('selectionchange', () => { selDirty = true; if (!mouseHeld) settleSoon(600); });
+document.addEventListener('mousedown', e => {
+  clearTimeout(settleTimer);
+  mouseHeld = e.button === 0;
+  if (e.target.closest('#lk-btn')) { e.preventDefault(); return; }  // keep the selection the button is about
+  const root = document.documentElement;
+  if (e.clientX >= root.clientWidth || e.clientY >= root.clientHeight) return;  // dragging the page's scrollbar
+  hideLookupBtn();
+  if (S.lookup && !e.target.closest('#lookup')) closeLookup();
+}, true);
+document.addEventListener('mouseup', () => { mouseHeld = false; if (selDirty) settleSoon(300); }, true);
+window.addEventListener('resize', () => positionLookup());
 
 // ---------------------------------------------------------------- small, safe markdown renderer
 const REF_RE = /([\w.\-\/]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,7}):(\d+)(?:[-–](\d+))?|((?:\b[Oo]ld |旧 ?)?)\bL(\d+)(?: ?[-–~] ?L?(\d+))?\b(?! ?-?(?:[Nn]orm|[Ll]oss|[Rr]egulari|[Pp]enalty|[Dd]istance|[Cc]ache|范数|正则|损失|距离|缓存))/g;

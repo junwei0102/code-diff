@@ -58,6 +58,8 @@ MAX_ANCHOR_LINES = 400
 MAX_ANNOTATE_ROWS = 400
 MAX_PARALLEL_JOBS = 3
 JOB_TIMEOUT = 600               # seconds before an explainer run is killed
+MAX_LOOKUP_CHARS = 600          # longest selection that select-to-explain takes
+LOOKUP_DIFF_BUDGET = 15000      # characters of diff in a lookup prompt: a quick lookup only needs the nearby code
 
 EXPLAINER_TOOLS = "Read,Grep,Glob"
 DENIED_TOOLS = "Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch"
@@ -674,6 +676,34 @@ Reply with ONLY a JSON array in a ```json fence, nothing before or after it:
 [{{"from": "r{a}", "to": "r{a}", "note": "..."}}]
 ```"""
 
+LOOKUP_TASK = """# Task: explain the selected piece from the ground up
+The reviewer selected {what}
+
+They want a short, plain explanation of what it means. They may have forgotten even the basics, such \
+as what a parameter stands for, what a function call does or what each symbol in a formula means, so \
+explain it in a way that someone who remembers none of the surrounding code can follow:
+- Start with one plain sentence: what it is (a parameter, a variable, a function call, a formula, a \
+condition, ...) and what it is for here.
+- Don't explain it in terms of other names the reviewer may not know either. Whenever you mention \
+another variable, function or symbol, say in a few words what it is, e.g. "lr (the learning rate: how \
+big a step each update takes)".
+- A variable or parameter: where its value comes from (where it is defined or passed in, its default, \
+a typical range, its units, or the shape of an array or tensor) and what changes when it gets bigger or smaller.
+- A function or method call: what goes in and what comes out, and what any non-obvious argument means \
+(e.g. dim=-1).
+- A formula: say in words what it computes, go through its symbols one by one, then give the intuition. \
+If it isn't obvious, add a tiny worked example with small numbers.
+- A few lines of code: walk through them step by step.
+- Look things up in the repository (Grep for where a name is defined, Read its docstring or config) \
+instead of guessing. If you can't find out, say so.
+- Keep it short: about 3-8 sentences or a short list, no headings, everyday words, and define any \
+technical term you can't avoid. This is a quick lookup, not a review: point out a problem only if it \
+matters for understanding."""
+
+LOOKUP_FOLLOW_UP = """(This thread started when the reviewer selected “{text}” to get a plain explanation of \
+it. Keep answering from the ground up: briefly, in everyday words, saying what every name or symbol you \
+mention is.)"""
+
 
 def row_line(row, rid=None):
     mark, old, new, text = row[0], row[1], row[2], row[3]
@@ -995,6 +1025,44 @@ def thread_where(t):
     return "`%s` %s" % (t["file"], anchor_label(t["anchor"]))
 
 
+def clean_lookup(lookup):
+    """What a select-to-explain thread is about: the selected text, plus the passage around it when
+    it was selected in an explanation or a note rather than in the code."""
+    if not isinstance(lookup, dict):
+        return None
+    text = str(lookup.get("text") or "").strip()[:MAX_LOOKUP_CHARS]
+    if not text:
+        return None
+    source = "text" if lookup.get("source") == "text" else "code"
+    context = str(lookup.get("context") or "").strip()[:2000] if source == "text" else ""
+    return {"text": text, "source": source, "context": context}
+
+
+def lookup_key(path, anchor, lookup):
+    """Identifies a selection, so selecting the same thing again reuses its explanation."""
+    spot = [anchor.get("side"), anchor.get("start"), anchor.get("end")] if anchor else None
+    raw = json.dumps([path, spot, lookup["source"], lookup["text"], lookup["context"]], ensure_ascii=False)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def lookup_task(t):
+    lookup, where = t["lookup"], thread_where(t)
+    if lookup["source"] == "code":
+        what = "this piece of code in %s (it is part of the lines shown above):\n```\n%s\n```" % (where, lookup["text"])
+    else:
+        passage = "\n".join("> " + line for line in (lookup["context"] or lookup["text"]).splitlines())
+        what = "the words “%s” in this passage of an explanation about %s:\n%s" % (lookup["text"], where, passage)
+    return LOOKUP_TASK.format(what=what)
+
+
+def answered(t):
+    return any(m["role"] == "ai" and m.get("status") == "done" for m in t["messages"])
+
+
+def code_span(text):
+    return "`` %s ``" % text if "`" in text else "`%s`" % text
+
+
 class App:
     def __init__(self, opts):
         self.opts = opts
@@ -1041,6 +1109,9 @@ class App:
                     rnd = st["round"] = rnd + 1
                 cur = st["rounds"][str(rnd)] = {"n": rnd, "startedAt": now(), "submitted": None,
                                                 "notes": cur["notes"] if cur else ""}
+                for t in list(st["threads"].values()):  # earlier rounds' unpinned lookups are never shown again
+                    if t.get("lookup") and not t.get("pinned"):
+                        self.drop_thread(t)
             if notes is not None:
                 cur["notes"] = notes
             cur["base"] = self.repo.base or "HEAD"
@@ -1093,7 +1164,7 @@ class App:
         with self.store.lock:
             return {"serverId": self.server_id, "repo": self.repo.describe(), "files": self.files,
                     "skipped": self.skipped, "notes": self.notes, "diffVersion": self.diff_version,
-                    "stats": self.stats(), "ai": self.explainer.describe(),
+                    "stats": self.stats(), "ai": self.explainer.describe(), "features": ["lookup"],
                     "listen": {"mode": self.listen.get("mode"), "host": self.listen.get("host")},
                     "state": self.state_since(0)}
 
@@ -1170,11 +1241,19 @@ class App:
                 path = body.get("file")
                 if path is not None and path not in self.by_path:
                     raise ApiError(400, "file not in the diff: %s" % path)
-                t = {"id": self.store.new_id("T"), "file": path,
-                     "anchor": clean_anchor(body.get("anchor")) if path else None,
+                anchor = clean_anchor(body.get("anchor")) if path else None
+                lookup = clean_lookup(body.get("lookup")) if use_ai else None
+                if lookup:
+                    lookup["key"] = lookup_key(path, anchor, lookup)
+                    same = self.reuse_lookup(lookup["key"])
+                    if same:
+                        return {"thread": same}
+                t = {"id": self.store.new_id("T"), "file": path, "anchor": anchor,
                      "kind": "change" if body.get("kind") == "change" else "question",
                      "askAuthor": bool(body.get("askAuthor")), "overview": bool(body.get("overview")),
                      "resolved": False, "round": st["round"], "createdAt": now(), "messages": []}
+                if lookup:  # select-to-explain: shown in a popover until the reviewer pins it to the page
+                    t.update(lookup=lookup, pinned=False)
                 st["threads"][t["id"]] = t
             if question:
                 t["messages"].append(self.message("user", question))
@@ -1189,16 +1268,33 @@ class App:
             self.explainer.submit(job)
         return {"thread": t}
 
+    def reuse_lookup(self, key):
+        """This round's earlier lookup of the same selection, if it has (or is getting) an answer.
+        One that failed or was stopped is dropped instead, so selecting it again starts afresh."""
+        st = self.store.data
+        for t in list(st["threads"].values()):
+            if (t.get("lookup") or {}).get("key") != key or t.get("round") != st["round"]:
+                continue
+            first = next((m for m in t["messages"] if m["role"] == "ai"), None)
+            if first and first.get("status") in ("pending", "done"):
+                return t
+            if not t.get("pinned"):
+                self.drop_thread(t)
+        return None
+
+    def drop_thread(self, t):
+        for m in t["messages"]:
+            if m.get("status") == "pending":
+                self.explainer.cancel("%s:%s" % (t["id"], m["id"]))
+        self.store.delete("threads", t["id"])
+
     def update_thread(self, body):
         with self.store.lock:
             t = self.store.data["threads"].get(body.get("id"))
             if t is None:
                 raise ApiError(404, "thread not found")
             if body.get("delete"):
-                for m in t["messages"]:
-                    if m.get("status") == "pending":
-                        self.explainer.cancel("%s:%s" % (t["id"], m["id"]))
-                self.store.delete("threads", t["id"])
+                self.drop_thread(t)
                 return {"ok": True}
             if "resolved" in body:
                 t["resolved"] = bool(body["resolved"])
@@ -1206,6 +1302,8 @@ class App:
                 t["kind"] = body["kind"]
             if "askAuthor" in body:
                 t["askAuthor"] = bool(body["askAuthor"])
+            if "pinned" in body and t.get("lookup"):
+                t["pinned"] = bool(body["pinned"])
             self.store.bump(t)
             return {"thread": t}
 
@@ -1214,6 +1312,11 @@ class App:
             self.explainer.cancel("%s:" % body["annoId"])
         elif body.get("threadId") and body.get("msgId"):
             self.explainer.cancel("%s:%s" % (body["threadId"], body["msgId"]))
+            if body.get("drop"):  # a lookup closed before it was answered: nothing in it is worth keeping
+                with self.store.lock:
+                    t = self.store.data["threads"].get(body["threadId"])
+                    if t and t.get("lookup") and not t.get("pinned") and not answered(t):
+                        self.store.delete("threads", t["id"])
         else:
             raise ApiError(400, "nothing to cancel")
         return {"ok": True}
@@ -1345,13 +1448,13 @@ class App:
             lines += ["", "## Author's notes (from the agent that wrote this change)", self.notes["summary"]]
         return "\n".join(lines)
 
-    def whole_diff(self):
+    def whole_diff(self, budget=WHOLE_DIFF_BUDGET):
         out, used = [], 0
-        per_file = max(4000, WHOLE_DIFF_BUDGET // max(1, len(self.files)))
+        per_file = max(4000, budget // max(1, len(self.files)))
         for i, f in enumerate(self.files):
             body = diff_text(f, budget=per_file) if f["hunks"] else ("(binary file)" if f["binary"] else "(no textual diff)")
             chunk = "### %s (%s)\n%s" % (f["path"], STATUS_WORDS.get(f["status"], "?"), body)
-            if used + len(chunk) > WHOLE_DIFF_BUDGET:
+            if used + len(chunk) > budget:
                 out.append("... (%d more files omitted; Read them if needed)" % (len(self.files) - i))
                 break
             out.append(chunk)
@@ -1359,7 +1462,7 @@ class App:
         return "\n\n".join(out)
 
     def ask_prompt(self, t):
-        lang = self.lang()
+        lang, lookup = self.lang(), t.get("lookup")
         parts = [PERSONA.format(lang=lang), "", "# Context", self.context()]
         f = self.by_path.get(t.get("file") or "")
         anchor = t.get("anchor")
@@ -1368,26 +1471,34 @@ class App:
             if note:
                 parts += ["", "## Author's note on %s" % f["path"], note]
             focus = (anchor["rowStart"], anchor["rowEnd"]) if anchor else None
+            budget = LOOKUP_DIFF_BUDGET if lookup else FILE_DIFF_BUDGET
             parts += ["", "## Diff of %s (%s)" % (f["path"], STATUS_WORDS.get(f["status"], "changed")),
-                      DIFF_LEGEND, "```diff", diff_text(f, focus) or "(no textual diff)", "```"]
+                      DIFF_LEGEND, "```diff", diff_text(f, focus, budget) or "(no textual diff)", "```"]
             if anchor:
-                parts += ["", "## The lines the reviewer selected (%s)" % anchor_label(anchor),
-                          "```diff", "\n".join(anchor["lines"]), "```"]
-            else:
+                title = "The lines the reviewer selected"
+                if lookup:
+                    title = "The lines the selection is in" if lookup["source"] == "code" else "The lines that explanation is about"
+                parts += ["", "## %s (%s)" % (title, anchor_label(anchor)), "```diff", "\n".join(anchor["lines"]), "```"]
+            elif not lookup:
                 parts += ["", "The reviewer is asking about this file as a whole."]
         else:
             if t.get("file"):
                 parts += ["", "(%s is no longer part of the diff.)" % t["file"]]
-            parts += ["", "## The whole diff", DIFF_LEGEND, "```diff", self.whole_diff(), "```"]
+            budget = LOOKUP_DIFF_BUDGET if lookup else WHOLE_DIFF_BUDGET
+            parts += ["", "## The whole diff", DIFF_LEGEND, "```diff", self.whole_diff(budget), "```"]
         msgs = [m for m in t["messages"] if m["text"].strip()]
         question = msgs.pop()["text"] if msgs and msgs[-1]["role"] == "user" else ""
         if msgs:
             who = {"user": "Reviewer", "ai": "Explainer (you)", "author": "Author (the agent that wrote the code)"}
             parts += ["", "## Earlier messages in this thread"]
             parts += ["**%s:** %s" % (who[m["role"]], m["text"]) for m in msgs]
-        if t.get("overview") and not any(m["role"] == "ai" and m.get("status") == "done" for m in t["messages"]):
+        if t.get("overview") and not answered(t):
             parts += ["", OVERVIEW_TASK.format(lang=lang)]
+        elif lookup and sum(m["role"] == "user" for m in t["messages"]) <= 1:  # the lookup itself, not a follow-up
+            parts += ["", lookup_task(t)]
         else:
+            if lookup:
+                parts += ["", LOOKUP_FOLLOW_UP.format(text=one_line(lookup["text"], 200))]
             parts += ["", "# The reviewer's question", question or "Explain the selected code."]
         return "\n".join(parts)
 
@@ -1471,7 +1582,10 @@ class App:
         changes = [t for t in threads if t["kind"] == "change" and needs_author(t)]
         questions = [t for t in threads if t["kind"] != "change" and needs_author(t)]
         puzzled = [t for t in threads if t["kind"] != "change" and not t.get("askAuthor") and not t.get("overview")
-                   and t.get("round") == rnd and any(m["role"] == "user" for m in t["messages"])]
+                   and not t.get("lookup") and t.get("round") == rnd and any(m["role"] == "user" for m in t["messages"])]
+        listed = {t["id"] for t in changes + questions}
+        looked_up = [t for t in threads if t.get("lookup") and t.get("round") == rnd and t["id"] not in listed
+                     and answered(t)]
         verdicts = st["verdicts"]
         rewrite = [f["path"] for f in self.files if verdicts.get(f["path"], {}).get("state") == "rewrite"]
         ok = [f["path"] for f in self.files if verdicts.get(f["path"], {}).get("state") == "ok"]
@@ -1502,6 +1616,15 @@ class App:
             for t in puzzled:
                 first = next(m["text"] for m in t["messages"] if m["role"] == "user")
                 md.append("- %s · %s: %s" % (t["id"], thread_where(t), one_line(first, 200)))
+        if looked_up:
+            md += ["", "## What the reviewer looked up with select-to-explain (%d)" % len(looked_up),
+                   "They selected a name, a call, a formula or a few lines and got a plain explanation. Not change "
+                   "requests: often they had just forgotten what a parameter or a library call means. But where your "
+                   "own names or formulas show up here, a clearer name or a short comment would help."]
+            for t in looked_up:
+                lk = t["lookup"]
+                md.append("- %s · %s%s" % (code_span(one_line(lk["text"], 100)), thread_where(t),
+                                            " (a word in an explanation)" if lk["source"] == "text" else ""))
         if ok or unreviewed:
             md.append("")
         if ok:
@@ -1513,6 +1636,8 @@ class App:
                 "changeRequests": [self.thread_brief(t) for t in changes],
                 "questions": [self.thread_brief(t) for t in questions],
                 "puzzled": [self.thread_brief(t) for t in puzzled],
+                "lookups": [{"id": t["id"], "text": t["lookup"]["text"], "source": t["lookup"]["source"],
+                             "where": thread_where(t)} for t in looked_up],
                 "files": {"rewrite": rewrite, "ok": ok, "notReviewed": unreviewed}}
         return "\n".join(md) + "\n", data
 
