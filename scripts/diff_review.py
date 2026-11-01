@@ -22,12 +22,14 @@ import fnmatch
 import getpass
 import hashlib
 import hmac
+import html
 import http.client
 import ipaddress
 import json
 import os
 import re
 import secrets
+import select
 import shlex
 import shutil
 import signal
@@ -69,6 +71,9 @@ PARENT_SESSION_VARS = (
     "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET",
     "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_PID", "CLAUDE_CODE_SSE_PORT",
 )
+AGENT_VAR = "CLAUDE_CODE_SESSION_ID"  # tells apart two agents (Claude sessions) pushing to the same review
+# /r/<key>/...: one of the reviews running on this machine (the key is Repo.key(), also its state dir's name)
+REVIEW_PATH = re.compile(r"^/r/([A-Za-z0-9_.-]+-[0-9a-f]{10})(/.*)?$")
 LANG_NAMES = {"zh": "Simplified Chinese", "en": "English"}
 STATUS_WORDS = {"M": "modified", "A": "added", "D": "deleted", "R": "renamed", "C": "copied"}
 VERDICTS = {
@@ -88,6 +93,17 @@ DENIED_PAGE = """<!doctype html><meta charset="utf-8"><title>diff-review</title>
 <h2>需要 token · Token required</h2>
 <p>请打开 <code>diff_review.py start</code> 打印出来的完整链接（带 <code>?token=…</code>）。这个页面能让 AI 读你的代码，所以没有 token 不让进。</p>
 <p>Open the full link printed by <code>diff_review.py start</code> (it ends with <code>?token=…</code>). This page lets an AI read your code, so it requires the token.</p></body>"""
+
+INDEX_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>diff-review</title>
+<body style="font:15px/1.6 system-ui,sans-serif;max-width:640px;margin:12vh auto;padding:0 16px">
+%s<h2>%s</h2>%s</body>"""
+
+ANOTHER_AGENT = """⚠ 没有推送：另一个 Claude 会话正开着这个仓库的 review（第 %d 轮，用户还没提交）。
+   两个 agent 在同一个工作区里改代码，git diff 分不出是谁改的。现在推送的话，你的说明会替换掉它的，
+   用户看到的是两边混在一起的改动，提交以后你们俩还会收到同一份 review。
+   先把这个情况告诉用户。用户同意由你接管这个 review 的话，加 --take-over 再运行一次 start。
+   要让两个 agent 同时干活、各审各的，就让它们各用一个 git worktree。"""
 
 
 # ----------------------------------------------------------------------------- small helpers
@@ -162,11 +178,16 @@ def load_token():
 
 
 def default_port():
-    """A stable per-user (and per-cluster) port, so SSH forwards and bookmarks keep working."""
+    """A stable port per user and machine, so SSH forwards and bookmarks keep working.
+
+    Each node of a cluster gets its own: reviews on two nodes (say a login node and a compute
+    node) need one SSH forward each, and two forwards can't share a local port."""
     if os.environ.get("DIFF_REVIEW_PORT"):
         return int(os.environ["DIFF_REVIEW_PORT"])
-    cluster = os.environ.get("CC_CLUSTER", "")
-    return 20000 + (os.getuid() + zlib.crc32(cluster.encode("utf-8"))) % 20000 if cluster else 20000 + os.getuid() % 20000
+    if not is_remote():
+        return 20000 + os.getuid() % 20000
+    node = "%s/%s" % (os.environ.get("CC_CLUSTER", ""), socket.gethostname().split(".")[0])
+    return 20000 + (os.getuid() + zlib.crc32(node.encode("utf-8"))) % 20000
 
 
 def is_remote():
@@ -556,8 +577,13 @@ class Repo:
         return f
 
 
+def cache_root():
+    """Holds one state dir per review, named by its key."""
+    return app_dir("XDG_CACHE_HOME", "~/.cache")
+
+
 def state_dir(repo):
-    return private_dir(os.path.join(app_dir("XDG_CACHE_HOME", "~/.cache"), repo.key()))
+    return private_dir(os.path.join(cache_root(), repo.key()))
 
 
 # ----------------------------------------------------------------------------- author notes
@@ -768,6 +794,25 @@ def find_claude(explicit=None):
     return None, ""
 
 
+def output_lines(proc, give_up):
+    """The lines a child process writes to stdout as they come, until it closes stdout or give_up()
+    turns true (checked every second). A plain readline() loop could wait forever: on a run that
+    hangs, or on a grandchild that still holds the pipe after the run was killed."""
+    fd, rest = proc.stdout.fileno(), b""
+    while not give_up():
+        if not select.select([fd], [], [], 1.0)[0]:
+            continue
+        chunk = os.read(fd, 65536)
+        lines = (rest + chunk).split(b"\n")
+        rest = lines.pop()
+        for line in lines:
+            yield line
+        if not chunk:  # end of output
+            if rest:
+                yield rest
+            return
+
+
 class Job:
     def __init__(self, kind, item_id, msg_id, prompt, settings):
         self.kind, self.item_id, self.msg_id, self.prompt = kind, item_id, msg_id, prompt
@@ -845,21 +890,45 @@ class Explainer:
         if proc is not None:
             self._kill(proc)
 
+    def was_cancelled(self, job):
+        with self.lock:
+            return job.key in self.cancelled
+
     def stop_all(self):
         with self.lock:
             procs = list(self.running.values())
         for proc in procs:
             self._kill(proc)
+        deadline = now() + 5
+        for proc in procs:  # one that ignores SIGTERM would outlive the server
+            try:
+                proc.wait(max(0.1, deadline - now()))
+            except subprocess.TimeoutExpired:
+                self._kill(proc, signal.SIGKILL)
 
     @staticmethod
-    def _kill(proc):
+    def _kill(proc, sig=signal.SIGTERM):
         try:
-            os.killpg(proc.pid, signal.SIGTERM)
+            os.killpg(proc.pid, sig)
         except OSError:
             try:
-                proc.terminate()
+                proc.send_signal(sig)
             except OSError:
                 pass
+
+    def _stop(self, proc):
+        """Make sure a run has ended: SIGTERM, then SIGKILL if it is still there 5 s later."""
+        if proc.poll() is not None:
+            return
+        self._kill(proc)
+        try:
+            proc.wait(5)
+        except subprocess.TimeoutExpired:
+            self._kill(proc, signal.SIGKILL)
+            try:
+                proc.wait(5)
+            except subprocess.TimeoutExpired:
+                pass  # stuck in the kernel (a hung file system, say): nothing more we can do
 
     def _run(self, job):
         with self.slots:
@@ -897,51 +966,48 @@ class Explainer:
             proc.stdin.close()
         except OSError:
             pass
-        timer = threading.Timer(JOB_TIMEOUT, self._kill, args=(proc,))
-        timer.daemon = True
-        timer.start()
+        deadline = now() + JOB_TIMEOUT
         final = error = cost = None
         has_text = False
         partial = self.caps.get("--include-partial-messages")
-        try:
-            for raw in iter(proc.stdout.readline, b""):
-                try:
-                    ev = json.loads(raw.decode("utf-8", "replace"))
-                except ValueError:
-                    continue
-                kind = ev.get("type")
-                if kind == "stream_event":
-                    e = ev.get("event") or {}
-                    if e.get("type") == "message_start" and has_text:
-                        self.app.job_text(job, "\n\n")
-                    elif e.get("type") == "content_block_delta":
-                        delta = e.get("delta") or {}
-                        if delta.get("type") == "text_delta" and delta.get("text"):
-                            has_text = True
-                            self.app.job_text(job, delta["text"])
-                elif kind == "assistant":
-                    for block in (ev.get("message") or {}).get("content") or []:
-                        if block.get("type") == "tool_use":
-                            self.app.job_tool(job, describe_tool(block, self.app.repo.root))
-                        elif block.get("type") == "text" and block.get("text") and not partial:
-                            self.app.job_text(job, ("\n\n" if has_text else "") + block["text"])
-                            has_text = True
-                elif kind == "result":
-                    cost = ev.get("total_cost_usd")
-                    if ev.get("is_error") or ev.get("subtype") not in (None, "success"):
-                        error = str(ev.get("result") or ev.get("subtype") or "unknown error")
-                    else:
-                        final = ev.get("result") or ""
-        finally:
-            timer.cancel()
-        proc.wait()
+        for raw in output_lines(proc, give_up=lambda: now() > deadline or self.was_cancelled(job)):
+            try:
+                ev = json.loads(raw.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            kind = ev.get("type")
+            if kind == "stream_event":
+                e = ev.get("event") or {}
+                if e.get("type") == "message_start" and has_text:
+                    self.app.job_text(job, "\n\n")
+                elif e.get("type") == "content_block_delta":
+                    delta = e.get("delta") or {}
+                    if delta.get("type") == "text_delta" and delta.get("text"):
+                        has_text = True
+                        self.app.job_text(job, delta["text"])
+            elif kind == "assistant":
+                for block in (ev.get("message") or {}).get("content") or []:
+                    if block.get("type") == "tool_use":
+                        self.app.job_tool(job, describe_tool(block, self.app.repo.root))
+                    elif block.get("type") == "text" and block.get("text") and not partial:
+                        self.app.job_text(job, ("\n\n" if has_text else "") + block["text"])
+                        has_text = True
+            elif kind == "result":
+                cost = ev.get("total_cost_usd")
+                if ev.get("is_error") or ev.get("subtype") not in (None, "success"):
+                    error = str(ev.get("result") or ev.get("subtype") or "unknown error")
+                else:
+                    final = ev.get("result") or ""
+                break  # the last event: no need to wait while the process winds down
+        self._stop(proc)
         err_reader.join(2)
-        with self.lock:
-            cancelled = job.key in self.cancelled
-        if cancelled:
+        if self.was_cancelled(job):
             self.app.job_done(job, None, None, cancelled=True)
             return
-        if final is None and error is None:
+        if final is None and error is None and now() > deadline:
+            error = self.app.tr("解释器 %d 分钟还没答完，已经停掉了。可以再问一次。",
+                                "The explainer hadn't answered after %d minutes and was stopped. Try asking again.") % (JOB_TIMEOUT // 60)
+        elif final is None and error is None:
             tail = b"".join(errors).decode("utf-8", "replace").strip()[-1500:]
             error = self.app.tr("claude 退出了（exit %s）", "claude exited (exit %s)") % proc.returncode
             if tail:
@@ -1067,6 +1133,7 @@ class App:
     def __init__(self, opts):
         self.opts = opts
         self.repo = Repo(opts.repo, opts.base, opts.patch, not opts.no_untracked, opts.exclude)
+        self.key = self.repo.key()  # names this review in URLs: /r/<key>/
         self.state_dir = state_dir(self.repo)
         self.reviews_dir = private_dir(os.path.join(self.state_dir, "reviews"))
         self.store = Store(os.path.join(self.state_dir, "state.json"))
@@ -1080,12 +1147,15 @@ class App:
         self.explainer = Explainer(self, opts.claude)
         if opts.model is not None:
             self.store.data["settings"]["model"] = opts.model
-        self.refresh(notes=read_optional(opts.notes), replies=read_replies(opts.replies))
+        self.end_orphaned_runs()
+        self.refresh(notes=read_optional(opts.notes), replies=read_replies(opts.replies),
+                     agent=os.environ.get(AGENT_VAR))
 
     # -- diff, rounds and author replies
 
-    def refresh(self, notes=None, replies=None, base=None, new_round=None):
-        """Reload the diff. Starts a new round when the current one was submitted."""
+    def refresh(self, notes=None, replies=None, base=None, new_round=None, agent=None):
+        """Reload the diff. Starts a new round when the current one was submitted.
+        `agent`: the Claude session pushing this, which then owns the round (see `start --take-over`)."""
         if replies is not None and not isinstance(replies, dict):
             raise ApiError(400, "replies must be an object like {\"T3\": \"...\"}")
         with self.store.lock:
@@ -1114,6 +1184,8 @@ class App:
                         self.drop_thread(t)
             if notes is not None:
                 cur["notes"] = notes
+            if agent:
+                cur["agent"] = agent
             cur["base"] = self.repo.base or "HEAD"
             for path, verdict in list(st["verdicts"].items()):  # a verdict only holds for the code it was given on
                 f = self.by_path.get(path)
@@ -1157,8 +1229,8 @@ class App:
             st = self.store.data
             cur = st["rounds"].get(str(st["round"])) or {}
             return {"ok": True, "serverId": self.server_id, "pid": os.getpid(), "name": self.repo.name,
-                    "round": st["round"], "submitted": cur.get("submitted"), "stats": self.stats(),
-                    "jobs": self.explainer.active}
+                    "round": st["round"], "submitted": cur.get("submitted"), "agent": cur.get("agent"),
+                    "stats": self.stats(), "jobs": self.explainer.active}
 
     def bootstrap(self):
         with self.store.lock:
@@ -1309,16 +1381,20 @@ class App:
 
     def cancel(self, body):
         if body.get("annoId"):
-            self.explainer.cancel("%s:" % body["annoId"])
+            job = Job("annotate", body["annoId"], None, "", {})
         elif body.get("threadId") and body.get("msgId"):
-            self.explainer.cancel("%s:%s" % (body["threadId"], body["msgId"]))
-            if body.get("drop"):  # a lookup closed before it was answered: nothing in it is worth keeping
-                with self.store.lock:
-                    t = self.store.data["threads"].get(body["threadId"])
-                    if t and t.get("lookup") and not t.get("pinned") and not answered(t):
-                        self.store.delete("threads", t["id"])
+            job = Job("ask", body["threadId"], body["msgId"], "", {})
         else:
             raise ApiError(400, "nothing to cancel")
+        self.explainer.cancel(job.key)
+        # Shown as stopped right away: the run may still be queued behind others, may hang, or may
+        # not exist any more, and then nothing else would ever end it.
+        self.job_done(job, None, None, cancelled=True)
+        if body.get("drop"):  # a lookup closed before it was answered: nothing in it is worth keeping
+            with self.store.lock:
+                t = self.store.data["threads"].get(body.get("threadId"))
+                if t and t.get("lookup") and not t.get("pinned") and not answered(t):
+                    self.store.delete("threads", t["id"])
         return {"ok": True}
 
     # -- line-by-line walkthroughs
@@ -1371,12 +1447,15 @@ class App:
     # -- explainer callbacks (called from worker threads)
 
     def _target(self, job):
+        """What a run writes to: (annotation, None) or (thread, message). (None, None) once that no
+        longer waits for the run: deleted, or stopped by the reviewer while the run was still going."""
         st = self.store.data
         if job.kind == "annotate":
-            return st["annotations"].get(job.item_id), None
+            anno = st["annotations"].get(job.item_id)
+            return (anno, None) if anno and anno["status"] == "pending" else (None, None)
         t = st["threads"].get(job.item_id)
         msg = next((m for m in t["messages"] if m["id"] == job.msg_id), None) if t else None
-        return t, msg
+        return (t, msg) if msg and msg.get("status") == "pending" else (None, None)
 
     def job_text(self, job, text):
         with self.store.lock:
@@ -1426,6 +1505,22 @@ class App:
                 if cost is not None:
                     msg["cost"] = cost
             self.store.bump(obj)
+
+    def end_orphaned_runs(self):
+        """Answers that were still being written when the previous server stopped: no run is behind
+        them any more, so they would show as in progress forever."""
+        note = self.tr("服务重启了，这个回答没写完。可以再问一次。",
+                       "The server restarted before this answer was finished. Please ask again.")
+        st = self.store.data
+        for t in st["threads"].values():
+            for m in t["messages"]:
+                if m.get("status") == "pending":
+                    m.update(status="error", error=note)
+                    self.store.bump(t)
+        for anno in st["annotations"].values():
+            if anno["status"] == "pending":
+                anno.update(status="error", error=note)
+                self.store.bump(anno)
 
     # -- prompts
 
@@ -1713,7 +1808,8 @@ ROUTES = {
     ("POST", "/api/settings"): lambda app, body, q: app.set_settings(body),
     ("POST", "/api/submit"): lambda app, body, q: app.submit(body),
     ("POST", "/api/refresh"): lambda app, body, q: app.refresh(body.get("notes"), body.get("replies"),
-                                                              body.get("base"), body.get("newRound")),
+                                                              body.get("base"), body.get("newRound"),
+                                                              body.get("agent")),
     ("POST", "/api/shutdown"): lambda app, body, q: app.request_shutdown(),
 }
 QUIET_ROUTES = {("GET", "/api/ping"), ("GET", "/api/state")}  # polling doesn't count as activity
@@ -1769,20 +1865,28 @@ class Handler(BaseHTTPRequestHandler):
         app = self.server.app
         url = urllib.parse.urlsplit(self.path)
         query = urllib.parse.parse_qs(url.query)
+        # /r/<key>/... is about one of the reviews on this machine; plain /api/... (the CLI) is about this one
+        m = REVIEW_PATH.match(url.path)
+        key, path = (m.group(1), m.group(2)) if m else (None, url.path)
         try:
-            if method == "GET" and url.path == "/":
-                return self.page(query)
-            if method == "GET" and url.path == "/favicon.ico":
+            if m and path is None:  # /r/<key> → /r/<key>/, so that the page's relative api/... URLs land under it
+                return self.send_body(303, b"", "text/plain",
+                                      {"Location": url.path + "/" + ("?" + url.query if url.query else "")})
+            if method == "GET" and path == "/":
+                return self.page(key, query)
+            if method == "GET" and path == "/favicon.ico":
                 return self.send_body(204, b"", "image/x-icon")
-            if not url.path.startswith("/api/"):
+            if not path.startswith("/api/"):
                 return self.send_json({"error": "not found"}, 404)
             if not self.token_ok(self.headers.get("X-DR-Token", "")):
                 return self.send_json({"error": "missing or wrong token"}, 401)
+            if key and key != app.key:
+                return self.forward(key, method, path, url.query)
             body = self.read_json() if method == "POST" else {}
-            handler = ROUTES.get((method, url.path))
+            handler = ROUTES.get((method, path))
             if handler is None:
                 return self.send_json({"error": "not found"}, 404)
-            if (method, url.path) not in QUIET_ROUTES:
+            if (method, path) not in QUIET_ROUTES:
                 app.last_activity = now()
             with app.store.lock:
                 payload = json.dumps(handler(app, body, query), ensure_ascii=False)
@@ -1798,31 +1902,58 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 pass
 
-    def read_json(self):
+    def read_body(self):
         length = int(self.headers.get("Content-Length") or 0)
         if length > 8 * 1024 * 1024:
             raise ApiError(413, "request too large")
-        raw = self.rfile.read(length) if length else b""
+        return self.rfile.read(length) if length else b""
+
+    def read_json(self):
         try:
-            data = json.loads(raw.decode("utf-8") or "{}")
+            data = json.loads(self.read_body().decode("utf-8") or "{}")
         except ValueError:
             raise ApiError(400, "invalid JSON")
         if not isinstance(data, dict):
             raise ApiError(400, "expected a JSON object")
         return data
 
-    def page(self, query):
+    def page(self, key, query):
+        """/r/<key>/ is that review's page; / lists the reviews running on this machine."""
         app = self.server.app
         token = (query.get("token") or [""])[0]
         if token:  # trade the URL token for a cookie, then drop it from the address bar
             if not self.token_ok(token):
                 return self.send_body(403, DENIED_PAGE, "text/html; charset=utf-8")
             cookie = "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (COOKIE, app.token)
-            return self.send_body(303, b"", "text/plain", {"Location": "/", "Set-Cookie": cookie})
+            here = urllib.parse.urlsplit(self.path).path
+            return self.send_body(303, b"", "text/plain", {"Location": here, "Set-Cookie": cookie})
         if not self.token_ok(self.cookie_token()):
             return self.send_body(401, DENIED_PAGE, "text/html; charset=utf-8")
         app.last_activity = now()
-        self.send_body(200, read_text(UI_FILE).replace("__DR_TOKEN__", app.token), "text/html; charset=utf-8")
+        if key == app.key or (key and sibling(key)):
+            # Every server hands out the same page; its api/... calls go under /r/<key>/ and reach that review.
+            return self.send_body(200, read_text(UI_FILE).replace("__DR_TOKEN__", app.token), "text/html; charset=utf-8")
+        self.send_body(404 if key else 200, index_page(app, missing=bool(key)), "text/html; charset=utf-8")
+
+    def forward(self, key, method, path, query):
+        """Pass an API call for another review on this machine on to that review's server."""
+        body, info, reply = self.read_body() or None, sibling(key), None
+        if info:
+            conn = connect(info, timeout=60)
+            try:
+                conn.request(method, path + ("?" + query if query else ""), body=body,
+                             headers={"X-DR-Token": self.headers.get("X-DR-Token", ""),
+                                      "Content-Type": "application/json"})
+                resp = conn.getresponse()
+                reply = (resp.status, resp.read(), resp.getheader("Content-Type") or "application/json")
+            except (OSError, http.client.HTTPException):
+                pass  # it stopped just now
+            finally:
+                conn.close()
+        if reply is None:  # the page tells the reviewer this review is over, rather than "can't connect"
+            return self.send_json({"error": self.server.app.tr("这个 review 已经停了", "This review has stopped"),
+                                   "gone": True}, 404)
+        self.send_body(*reply)
 
 
 class TCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -1846,11 +1977,15 @@ class UnixHTTPConnection(http.client.HTTPConnection):
         self.sock = sock
 
 
-def api_call(info, method, path, body=None, timeout=10):
+def connect(info, timeout):
+    """An HTTP connection to the server that `info` (its server.json) describes."""
     if info.get("mode") == "unix":
-        conn = UnixHTTPConnection(info["socket"], timeout)
-    else:
-        conn = http.client.HTTPConnection("127.0.0.1", info["port"], timeout=timeout)
+        return UnixHTTPConnection(info["socket"], timeout)
+    return http.client.HTTPConnection("127.0.0.1", info["port"], timeout=timeout)
+
+
+def api_call(info, method, path, body=None, timeout=10):
+    conn = connect(info, timeout)
     try:
         conn.request(method, path, body=None if body is None else json.dumps(body).encode("utf-8"),
                      headers={"X-DR-Token": load_token(), "Content-Type": "application/json"})
@@ -1884,6 +2019,18 @@ def point_symlink(link, target):
         pass
 
 
+def hand_over_entry(entry):
+    """Point the shared entry socket at another review still running on this machine, or remove it.
+    Only servers that write a key in server.json can pass requests on to the others."""
+    for info in running_reviews().values():
+        if info.get("key") and info.get("socket") and unix_alive(info["socket"]):
+            return point_symlink(entry, info["socket"])
+    try:
+        os.unlink(entry)
+    except OSError:
+        pass
+
+
 def bind_tcp(host, preferred):
     error = None
     for port in range(preferred, preferred + 50):
@@ -1902,6 +2049,8 @@ def housekeeping(app, httpd):
             app.store.save()
         except OSError as e:
             sys.stderr.write("could not save state: %s\n" % e)
+        if app.listen.get("mode") == "unix" and not unix_alive(app.listen["current"]):
+            point_symlink(app.listen["current"], app.listen["socket"])  # nobody holds the shared entry: take it
         if idle_limit > 0 and now() - app.last_activity > idle_limit and app.explainer.active == 0:
             sys.stderr.write("idle for %.1f h, shutting down\n" % app.opts.idle_hours)
             httpd.shutdown()
@@ -1914,10 +2063,10 @@ def cmd_serve(opts):
     app = App(opts)
     mode = opts.listen or ("unix" if is_remote() else "tcp")
     info = {"mode": mode, "pid": os.getpid(), "serverId": app.server_id, "host": socket.gethostname(),
-            "repo": app.repo.root, "startedAt": now()}
+            "repo": app.repo.root, "key": app.key, "startedAt": now()}
     info.update(node_details() if is_remote() else {"remote": False})
     if mode == "unix":
-        path = os.path.join(socket_dir(), app.repo.key() + ".sock")
+        path = os.path.join(socket_dir(), app.key + ".sock")
         if os.path.exists(path):
             if unix_alive(path):
                 raise SystemExit("another diff-review server already listens on %s" % path)
@@ -1928,6 +2077,8 @@ def cmd_serve(opts):
         finally:
             os.umask(umask)
         os.chmod(path, 0o600)
+        # The one socket the SSH forward points at, shared by all reviews on this machine: whichever
+        # server holds it passes calls for the others on (see Handler.forward).
         current = os.path.join(os.path.dirname(path), "current.sock")
         point_symlink(current, path)
         info.update(socket=path, current=current, port=opts.port or default_port())
@@ -1957,26 +2108,69 @@ def cmd_serve(opts):
                 os.unlink(info["socket"])
             except OSError:
                 pass
-            try:
-                if os.path.realpath(info["current"]) == os.path.realpath(info["socket"]):
-                    os.unlink(info["current"])
-            except OSError:
-                pass
+            if os.path.realpath(info["current"]) == os.path.realpath(info["socket"]):
+                hand_over_entry(info["current"])
 
 
-def live_server(sdir):
-    """The running server for a state dir (as recorded in server.json), or None."""
+def server_info(sdir):
+    """What a state dir's server.json says about its server, if that server runs on this machine."""
     try:
         info = json.loads(read_text(os.path.join(sdir, "server.json")))
     except (OSError, ValueError):
         return None
     if info.get("host") != socket.gethostname() or not pid_alive(info.get("pid")):
         return None
+    return info
+
+
+def live_server(sdir):
+    """The running server for a state dir, if it answers a ping."""
+    info = server_info(sdir)
+    if not info:
+        return None
     try:
         info["ping"] = api_call(info, "GET", "/api/ping", timeout=5)
     except Exception:
         return None
     return info
+
+
+def sibling(key):
+    """The server of another review running on this machine, or None."""
+    return server_info(os.path.join(cache_root(), key))
+
+
+def running_reviews():
+    """{key: server.json} of every review whose server runs on this machine."""
+    root, found = cache_root(), {}
+    for key in os.listdir(root) if os.path.isdir(root) else []:
+        info = server_info(os.path.join(root, key))
+        if info:
+            found[key] = info
+    return found
+
+
+def index_page(app, missing):
+    """The reviews running on this machine, newest first. `missing`: the one asked for isn't among them."""
+    tr, items = app.tr, []
+    for key, info in sorted(running_reviews().items(), key=lambda kv: kv[1].get("startedAt", 0), reverse=True):
+        try:
+            ping = app.ping() if key == app.key else api_call(info, "GET", "/api/ping", timeout=2)
+        except Exception:
+            continue  # stopping right now
+        items.append('<li><a href="/r/%s/"><b>%s</b></a> · %s · %s<br><small>%s</small></li>' % (
+            key, html.escape(ping.get("name") or key), tr("第 %d 轮", "round %d") % ping["round"],
+            tr("已提交", "submitted") if ping.get("submitted") else tr("等你审", "waiting for you"),
+            html.escape(info.get("repo") or "")))
+    note = ""
+    if missing:
+        note = '<p style="border-left:4px solid #d1242f;padding-left:12px">%s</p>' % tr(
+            "这个 review 现在没有在跑：可能已经通过并关掉了，或者 6 小时没人用自动退出了。让 agent 重新 start 就能接着看。",
+            "This review isn't running any more: it was approved and stopped, or it quit after 6 idle hours. "
+            "Ask the agent to start it again.")
+    listing = "<ul>%s</ul>" % "".join(items) if items else "<p>%s</p>" % tr(
+        "现在一个都没有。", "None right now.")
+    return INDEX_PAGE % (note, tr("这台机器上正在跑的 review", "Reviews running on this machine"), listing)
 
 
 def is_global_ip(ip):
@@ -2065,10 +2259,9 @@ def forward_command(info):
 
 
 def page_url(info):
-    token = load_token()
-    if info["mode"] == "unix":
-        return "http://localhost:%d/?token=%s" % (info["port"], token)
-    return "http://127.0.0.1:%d/?token=%s" % (info["port"], token)
+    host = "localhost" if info["mode"] == "unix" else "127.0.0.1"
+    path = "/r/%s/" % info["key"] if info.get("key") else "/"  # servers from before /r/<key>/ write no key
+    return "http://%s:%d%s?token=%s" % (host, info["port"], path, load_token())
 
 
 def print_banner(info, ping, refreshed=False, result=None):
@@ -2090,7 +2283,7 @@ def print_banner(info, ping, refreshed=False, result=None):
         print("   服务跑在 %s 上（%s）。" % (node, kind))
         print("   集群的登录地址后面常常有好几个登录节点，新开的 SSH 连接不一定落在 %s 上，所以转发要直接连到这台机器%s。"
               % (node, "" if info.get("nodeAddress") else "（它没有能从外面直接连的地址，所以经登录地址跳过去）"))
-        print("   在【你自己电脑】的终端里跑一次（之后每一轮都不用再跑；这条转发已经在跑就跳过）：")
+        print("   在【你自己电脑】的终端里跑一次（%s 上所有的 review、之后的每一轮都走这条转发；它已经在跑就跳过）：" % node)
         print("     " + forward_command(info))
         if not info.get("nodeAddress") and not info.get("loginAddress"):
             print("   （<登录地址> 换成你平时 ssh 登录这里用的名字，或者在这台机器上设好 DIFF_REVIEW_SSH_HOST。）")
@@ -2138,14 +2331,16 @@ def cmd_start(opts):
     sdir = state_dir(repo)
     info = live_server(sdir)
     if info:
-        body = {"notes": read_optional(opts.notes), "replies": read_replies(opts.replies)}
+        me, owner = os.environ.get(AGENT_VAR), info["ping"].get("agent")
+        if me and owner and owner != me and not info["ping"].get("submitted") and not opts.take_over:
+            print(ANOTHER_AGENT % info["ping"]["round"])
+            return 1
+        body = {"notes": read_optional(opts.notes), "replies": read_replies(opts.replies), "agent": me}
         if opts.base is not None:
             body["base"] = opts.base
         if opts.new_round:
             body["newRound"] = True
         result = api_call(info, "POST", "/api/refresh", body, timeout=180)
-        if info["mode"] == "unix":
-            point_symlink(info["current"], info["socket"])
         print_banner(info, api_call(info, "GET", "/api/ping"), refreshed=True, result=result)
         if result.get("unknownReplies"):
             print("⚠ replies 里这些 thread id 不存在或回复为空，已忽略：" + ", ".join(result["unknownReplies"]))
@@ -2185,7 +2380,7 @@ def cmd_wait(opts):
     if not info:
         print("没有正在运行的 diff-review（先运行 start）。")
         return 2
-    rnd = info["ping"]["round"]
+    rnd, me = info["ping"]["round"], os.environ.get(AGENT_VAR)
     deadline = now() + opts.timeout if opts.timeout else None
     failures = 0
     while True:
@@ -2201,6 +2396,11 @@ def cmd_wait(opts):
                     return 0
                 print("diff-review 已经停了，第 %d 轮没有提交。" % rnd)
                 return 3
+        owner = ping and ping.get("agent")
+        if me and owner and owner != me and ping.get("round") == rnd:
+            print("第 %d 轮被另一个 Claude 会话接管了（它用 start --take-over 推送了自己的改动），这一轮不用再等了。"
+                  "把这个情况告诉用户。" % rnd)
+            return 6
         if ping:
             submitted = ping.get("submitted") if ping.get("round") == rnd else os.path.exists(review_path(sdir, rnd))
             if submitted:
@@ -2262,7 +2462,7 @@ def cmd_stop(opts):
         api_call(info, "POST", "/api/shutdown", {})
     except Exception:
         os.kill(int(info["pid"]), signal.SIGTERM)
-    for _ in range(50):
+    for _ in range(150):  # an explainer run that ignores SIGTERM takes it 5 s to end
         if not pid_alive(info["pid"]):
             break
         time.sleep(0.1)
@@ -2296,6 +2496,8 @@ def main(argv=None):
     target(p)
     server_options(p)
     p.add_argument("--new-round", action="store_true", help="start a new round even if this one wasn't submitted")
+    p.add_argument("--take-over", action="store_true",
+                   help="push even though another Claude session's unsubmitted round of this review is open")
     p.add_argument("--open", action="store_true", help="open the page in the local browser")
     p = sub.add_parser("serve", help="run the server in the foreground")
     target(p)

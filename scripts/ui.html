@@ -135,7 +135,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-wid
 .st-M { color: var(--warn); background: var(--warn-soft); }
 .st-R, .st-C { color: var(--accent); background: var(--accent-soft); }
 #main { padding: 16px 20px 120px; min-width: 0; }
-.only-narrow { display: none; }
+.only-narrow, .only-phone { display: none; }
 
 /* banners and cards */
 .banner { padding: 9px 14px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -349,18 +349,25 @@ table.vf td.ln { cursor: default; }
   tr.thread-row > td, tr.anno-row > td, tr.anno-head > td, tr.actbar > td { padding-left: 8px; padding-right: 8px; }
   .file-head .btn .lbl, #btn-overview .lbl { display: none; }
 }
+@media (max-width: 480px) {  /* phones: make room in the header for the repo name and round */
+  .hide-phone { display: none !important; }
+  .only-phone { display: inline; }
+  #top { gap: 4px; }
+  #top .btn.icon { padding: 5px 7px; }
+  #btn-lang { min-width: 0; }
+}
 </style>
 </head>
 <body>
 <header id="top">
   <button class="btn icon only-narrow" data-act="toggle-side" data-i18n-title="hdr.filesTip">☰</button>
-  <div class="brand"><span class="logo">◧</span><span class="hide-narrow">Diff Review</span></div>
+  <div class="brand hide-phone"><span class="logo">◧</span><span class="hide-narrow">Diff Review</span></div>
   <div class="meta" id="meta"></div>
   <div class="spacer"></div>
   <button class="btn" data-act="overview" id="btn-overview" data-i18n-title="hdr.overviewTip">📖<span class="lbl" data-i18n="hdr.overview"></span></button>
   <button class="btn icon" data-act="help" data-i18n-title="hdr.helpTip">?</button>
   <button class="btn icon" data-act="settings" data-i18n-title="hdr.settingsTip">⚙</button>
-  <button class="btn icon" data-act="theme" data-i18n-title="hdr.themeTip">◐</button>
+  <button class="btn icon hide-phone" data-act="theme" data-i18n-title="hdr.themeTip">◐</button>
   <button class="btn" data-act="lang" id="btn-lang"></button>
   <button class="btn primary" data-act="open-submit" id="btn-submit"></button>
 </header>
@@ -403,6 +410,7 @@ const I18N = {
     'hdr.langBtn': 'EN',
     'hdr.langTip': 'Switch to English（AI 的回答也会改用英文）',
     'hdr.submit': '提交 review',
+    'hdr.submitShort': '提交',
     'hdr.submitted': '已提交',
     'hdr.branchTip': '分支',
     'hdr.baseTip': '对比的基准',
@@ -426,6 +434,8 @@ const I18N = {
     'lbl.aboutWhole': '关于整体改动',
     'lbl.round': n => `第${n}轮`,
     'ban.disconnected': '⚠ 连不上 diff-review 服务，正在重试…（如果这次 review 已经结束，可以关掉这个页面）',
+    'ban.gone': '⚠ 这个 review 的服务已经停了：可能已经通过并关掉，或者 6 小时没人用自动退出了。agent 重新 start 以后，这个页面会自己接上。',
+    'ban.goneList': '看看还有哪些 review 在跑',
     'ban.noAi': e => `AI 解释不可用：${e}。你仍然可以把问题留给作者，或者直接打回。`,
     'ban.approved': n => `✅ 第 ${n} 轮已通过，可以关掉这个页面了。`,
     'ban.submitted': (n, v) => `已提交第 ${n} 轮（${v}）。agent 处理完会推送第 ${n + 1} 轮，这个页面会自动刷新。`,
@@ -638,6 +648,7 @@ const I18N = {
     'hdr.langBtn': '中文',
     'hdr.langTip': '切换到中文（AI 的回答也会改用中文）',
     'hdr.submit': 'Submit review',
+    'hdr.submitShort': 'Submit',
     'hdr.submitted': 'Submitted',
     'hdr.branchTip': 'Branch',
     'hdr.baseTip': 'Diff base',
@@ -661,6 +672,8 @@ const I18N = {
     'lbl.aboutWhole': 'About the whole change',
     'lbl.round': n => `round ${n}`,
     'ban.disconnected': '⚠ Lost the connection to the diff-review server, retrying… (if this review is over, you can close this page)',
+    'ban.gone': '⚠ This review\'s server has stopped: it was approved and closed, or it quit after 6 idle hours. Once the agent starts it again, this page reconnects by itself.',
+    'ban.goneList': 'See which reviews are running',
     'ban.noAi': e => `AI explanations are unavailable: ${e}. You can still leave questions for the author, or send the change back.`,
     'ban.approved': n => `✅ Round ${n} approved. You can close this page.`,
     'ban.submitted': (n, v) => `Round ${n} submitted (${v}). When the agent is done it pushes round ${n + 1}, and this page refreshes by itself.`,
@@ -897,14 +910,14 @@ function toggleLang() {
 // AI answers (and the server's own messages) follow the page language.
 async function syncLang() {
   if (!S.booted || S.settings.lang === LANG) return;
-  try { S.settings = (await api('POST', '/api/settings', {lang: LANG})).settings; } catch (e) { /* retried on the next boot */ }
+  try { S.settings = (await api('POST', 'api/settings', {lang: LANG})).settings; } catch (e) { /* retried on the next boot */ }
 }
 
 const S = {
   serverId: null, diffVersion: null, version: 0, round: 1, rounds: {}, settings: {}, jobs: 0,
   repo: {}, ai: {available: false}, listen: {}, stats: {}, files: [], byPath: {}, notes: {summary: '', files: {}}, skipped: [],
   threads: {}, annos: {}, verdicts: {}, threadEls: {}, sel: null, composer: null, actbar: null,
-  collapsed: {}, hideAnno: {}, connected: true, booted: false, newRoundBanner: null, draftComment: '',
+  collapsed: {}, hideAnno: {}, link: 'ok', booted: false, newRoundBanner: null, draftComment: '',
   features: [], lookup: null, lookupPick: null,
 };
 const GENERATED = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|Pipfile\.lock)$|\.min\.(js|css)$|\.map$/;
@@ -919,6 +932,8 @@ const EXT_LANG = {
 };
 
 // ---------------------------------------------------------------- server API
+// URLs are relative ('api/state'): the page lives at /r/<review>/, so they reach this review's server
+// even when other reviews on the same machine share the address.
 async function api(method, url, body) {
   let r;
   try {
@@ -927,13 +942,17 @@ async function api(method, url, body) {
   } catch (e) { throw new Error(T('api.unreachable', e.message)); }
   let data = null;
   try { data = await r.json(); } catch (e) { /* not JSON */ }
-  if (!r.ok) throw new Error((data && data.error) || 'HTTP ' + r.status);
+  if (!r.ok) {
+    const err = new Error((data && data.error) || 'HTTP ' + r.status);
+    err.gone = !!(data && data.gone);  // this review's server has stopped
+    throw err;
+  }
   return data;
 }
 
 async function boot() {
   const y = S.booted ? window.scrollY : 0;
-  const data = await api('GET', '/api/bootstrap');
+  const data = await api('GET', 'api/bootstrap');
   Object.assign(S, {serverId: data.serverId, diffVersion: data.diffVersion, repo: data.repo, ai: data.ai,
                     listen: data.listen, stats: data.stats, files: data.files, skipped: data.skipped, notes: data.notes,
                     features: data.features || []});
@@ -998,17 +1017,20 @@ function applyState(st, initial) {
 async function poll() {
   let delay = 2500;
   try {
-    const st = await api('GET', '/api/state?since=' + S.version);
-    if (!S.connected) { S.connected = true; renderBanners(); }
-    if (st.serverId !== S.serverId) { location.reload(); return; }
+    const st = await api('GET', 'api/state?since=' + S.version);
+    setLink('ok');
+    if (st.serverId !== S.serverId) { location.reload(); return; }  // this review's server was restarted
     if (st.diffVersion !== S.diffVersion) await boot();
     else if (st.version !== S.version || st.jobs !== S.jobs) applyState(st, false);
     if (st.jobs > 0) delay = 700;
   } catch (e) {
-    if (S.connected) { S.connected = false; renderBanners(); }
+    setLink(e.gone ? 'gone' : 'lost');
     delay = 3000;
   }
   setTimeout(poll, delay);
+}
+function setLink(state) {  // 'ok', 'lost' (can't reach the server) or 'gone' (this review's server has stopped)
+  if (S.link !== state) { S.link = state; renderBanners(); }
 }
 
 // ---------------------------------------------------------------- model helpers
@@ -1119,7 +1141,8 @@ function renderHeader() {
     <span class="stat hide-narrow">${esc(T('hdr.files', S.stats.files || 0))} <span class="add">+${S.stats.additions || 0}</span> <span class="del">−${S.stats.deletions || 0}</span></span>`;
   const btn = $('#btn-submit');
   btn.disabled = !!sub;
-  btn.textContent = sub ? T('hdr.submitted') : T('hdr.submit');
+  btn.innerHTML = sub ? esc(T('hdr.submitted'))
+    : `<span class="hide-phone">${esc(T('hdr.submit'))}</span><span class="only-phone">${esc(T('hdr.submitShort'))}</span>`;
   $('#btn-overview').hidden = !S.ai.available;
   document.title = T('doc.title', S.repo.name || '', S.round);
 }
@@ -1146,7 +1169,8 @@ function renderSidebar() {
 }
 function renderBanners() {
   const out = [];
-  if (!S.connected) out.push(`<div class="banner err">${esc(T('ban.disconnected'))}</div>`);
+  if (S.link === 'lost') out.push(`<div class="banner err">${esc(T('ban.disconnected'))}</div>`);
+  if (S.link === 'gone') out.push(`<div class="banner err">${esc(T('ban.gone'))} <a href="/">${esc(T('ban.goneList'))}</a></div>`);
   if (!S.ai.available && (S.ai.error || S.ai.errorCode)) out.push(`<div class="banner warn">${esc(T('ban.noAi', aiError()))}</div>`);
   const sub = (S.rounds[S.round] || {}).submitted;
   if (sub) {
@@ -1633,7 +1657,7 @@ function ingestThread(t, focus) {
 }
 async function askSelection(question, ai, askAuthor, kind) {
   const f = S.byPath[S.sel.path];
-  const res = await api('POST', '/api/ask', {file: f.path, anchor: makeAnchor(f, S.sel.a, S.sel.b), question, ai, askAuthor: !!askAuthor, kind: kind || 'question'});
+  const res = await api('POST', 'api/ask', {file: f.path, anchor: makeAnchor(f, S.sel.a, S.sel.b), question, ai, askAuthor: !!askAuthor, kind: kind || 'question'});
   clearSel();
   ingestThread(res.thread, true);
 }
@@ -1663,7 +1687,7 @@ function fillChip(el) {
 async function annotateRange(path, a, b) {
   if (!S.ai.available) { toast(T('toast.noAi')); return; }
   if (b - a + 1 > 400) { toast(T('toast.tooManyRows')); return; }
-  const res = await api('POST', '/api/annotate', {file: path, rowStart: a, rowEnd: b});
+  const res = await api('POST', 'api/annotate', {file: path, rowStart: a, rowEnd: b});
   for (const [id, x] of Object.entries(S.annos)) if (x.file === path && !(x.rowEnd < a || x.rowStart > b)) delete S.annos[id];
   S.annos[res.annotation.id] = res.annotation;
   S.jobs = Math.max(S.jobs, 1);
@@ -1695,12 +1719,12 @@ async function sendFileComposer(el) {
   if (box.dataset.mode === 'rewrite') { box.remove(); return setVerdict(f, 'rewrite', text); }
   const toAuthor = box.querySelector('.to-author').checked;
   if (toAuthor && !text) { toast(T('toast.needAuthorQ')); return; }
-  const res = await api('POST', '/api/ask', {file: f.path, anchor: null, question: text || T('q.file'), ai: !toAuthor, askAuthor: toAuthor});
+  const res = await api('POST', 'api/ask', {file: f.path, anchor: null, question: text || T('q.file'), ai: !toAuthor, askAuthor: toAuthor});
   box.remove();
   ingestThread(res.thread, true);
 }
 async function setVerdict(f, state, comment) {
-  const res = await api('POST', '/api/verdict', {file: f.path, state, comment: comment || ''});
+  const res = await api('POST', 'api/verdict', {file: f.path, state, comment: comment || ''});
   S.verdicts = res.verdicts;
   if (res.thread) ingestThread(res.thread, false);
   refreshFileHead(f);
@@ -1714,21 +1738,21 @@ async function setVerdict(f, state, comment) {
 async function overview() {
   const existing = Object.values(S.threads).find(t => t.overview);
   if (existing) { threadEl(existing).scrollIntoView({block: 'start', behavior: 'smooth'}); return; }
-  const res = await api('POST', '/api/ask', {file: null, overview: true, ai: true, question: T('q.overview')});
+  const res = await api('POST', 'api/ask', {file: null, overview: true, ai: true, question: T('q.overview')});
   ingestThread(res.thread, true);
 }
 async function globalAsk(ai) {
   const ta = $('.ask-global textarea');
   const q = ta.value.trim();
   if (!q) { ta.focus(); return; }
-  const res = await api('POST', '/api/ask', {file: null, question: q, ai, askAuthor: !ai});
+  const res = await api('POST', 'api/ask', {file: null, question: q, ai, askAuthor: !ai});
   ta.value = '';
   ingestThread(res.thread, true);
 }
 const threadIdOf = el => el.closest('[data-thread]').dataset.thread;
 async function threadUpdate(el, patch) {
   const id = threadIdOf(el);
-  const res = await api('POST', '/api/thread', Object.assign({id}, patch));
+  const res = await api('POST', 'api/thread', Object.assign({id}, patch));
   if (patch.delete) {
     const t = S.threads[id];
     delete S.threads[id];
@@ -1752,7 +1776,7 @@ async function sendFollowup(el) {
   const toAuthor = box.querySelector('.to-author').checked;
   const body = {threadId: th.dataset.thread, question: q, ai: !toAuthor};
   if (toAuthor) body.askAuthor = true;
-  const res = await api('POST', '/api/ask', body);
+  const res = await api('POST', 'api/ask', body);
   ta.value = '';
   box.hidden = true;
   ingestThread(res.thread);
@@ -1760,7 +1784,7 @@ async function sendFollowup(el) {
 async function stopThread(el) {
   const t = S.threads[threadIdOf(el)];
   const m = t && t.messages.find(x => x.status === 'pending');
-  if (m) await api('POST', '/api/cancel', {threadId: t.id, msgId: m.id});
+  if (m) await api('POST', 'api/cancel', {threadId: t.id, msgId: m.id});
 }
 const annoIdOf = el => el.closest('[data-anno]').dataset.anno;
 function gotoFile(path) {
@@ -1796,7 +1820,7 @@ function jumpTo(path, side, line) {
 async function viewFile(path, side, line) {
   const f = S.byPath[path];
   side = side || (f && f.status === 'D' ? 'old' : 'new');
-  const data = await api('GET', `/api/file?path=${encodeURIComponent(path)}&side=${side}`);
+  const data = await api('GET', `api/file?path=${encodeURIComponent(path)}&side=${side}`);
   const lines = data.text.replace(/\r\n/g, '\n').split('\n');
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
   const changed = new Set(f ? f.rows.filter(r => side === 'new' ? r.t === '+' : r.t === '-').map(r => side === 'new' ? r.n : r.o) : []);
@@ -1845,7 +1869,7 @@ async function submitReview() {
   const items = ts.filter(t => t.kind === 'change' && needsAuthor(t)).length + S.files.filter(f => (S.verdicts[f.path] || {}).state === 'rewrite').length;
   if (verdict === 'approve' && items && !confirm(T('sub.confirmApprove', items))) return;
   if (verdict === 'changes' && !items && !comment && !confirm(T('sub.confirmEmpty'))) return;
-  const res = await api('POST', '/api/submit', {verdict, comment});
+  const res = await api('POST', 'api/submit', {verdict, comment});
   S.draftComment = '';
   S.rounds[S.round] = Object.assign({}, S.rounds[S.round], {submitted: {verdict, comment, at: Date.now() / 1000}});
   renderHeader();
@@ -1856,7 +1880,7 @@ async function submitReview() {
     <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">${esc(T('common.ok'))}</button></div>`);
 }
 async function showReview(round) {
-  const r = await api('GET', '/api/review?round=' + round);
+  const r = await api('GET', 'api/review?round=' + round);
   openModal(`<h2>${esc(T('rev.title', round))}</h2><div class="md review-md">${md(r.markdown)}</div>
     <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">${esc(T('common.close'))}</button></div>`, 'wide');
 }
@@ -1918,7 +1942,7 @@ const ACTIONS = {
   'dismiss-banner': () => { S.newRoundBanner = null; renderBanners(); },
   'save-settings': async () => {
     try { localStorage.setItem('dr-auto-lookup', $('#set-auto-lookup').checked ? '1' : '0'); } catch (e) { /* storage blocked */ }
-    const res = await api('POST', '/api/settings', {model: $('#set-model').value, effort: $('#set-effort').value});
+    const res = await api('POST', 'api/settings', {model: $('#set-model').value, effort: $('#set-effort').value});
     S.settings = res.settings;
     closeModal();
     toast(T('toast.saved'), 'ok');
@@ -1960,8 +1984,8 @@ const ACTIONS = {
     if (loc) { const r = f.rowEls[loc.start]; r.scrollIntoView({block: 'center', behavior: 'smooth'}); flash(r); }
     else if (t && t.file) gotoFile(t.file);
   },
-  'anno-cancel': el => api('POST', '/api/cancel', {annoId: annoIdOf(el)}),
-  'anno-delete': async el => { const id = annoIdOf(el), a = S.annos[id]; await api('POST', '/api/annotation', {id, delete: true}); delete S.annos[id]; if (a) placeExtras(a.file); },
+  'anno-cancel': el => api('POST', 'api/cancel', {annoId: annoIdOf(el)}),
+  'anno-delete': async el => { const id = annoIdOf(el), a = S.annos[id]; await api('POST', 'api/annotation', {id, delete: true}); delete S.annos[id]; if (a) placeExtras(a.file); },
   'anno-toggle': el => { const id = annoIdOf(el); S.hideAnno[id] = !S.hideAnno[id]; placeExtras(S.annos[id].file); },
   'anno-redo': el => { const a = S.annos[annoIdOf(el)]; return annotateRange(a.file, a.rowStart, a.rowEnd); },
   'lk-open': () => S.lookupPick && openLookup(S.lookupPick),
@@ -2127,7 +2151,7 @@ async function openLookup(pick) {
   L.stack.push(item);
   renderLookup();
   try {
-    const res = await api('POST', '/api/ask', {file: pick.file, anchor: pick.anchor, question: T('lk.question', pick.text), ai: true,
+    const res = await api('POST', 'api/ask', {file: pick.file, anchor: pick.anchor, question: T('lk.question', pick.text), ai: true,
                                                lookup: {text: pick.text, source: pick.source, context: pick.context || ''}});
     S.threads[res.thread.id] = res.thread;
     item.id = res.thread.id;
@@ -2147,7 +2171,7 @@ function closeLookup(keepJobs) {
 // A lookup closed before its answer came isn't worth the tokens: stop it, and the server drops it.
 function dropUnfinished(id) {
   const t = id && S.threads[id], m = t && !t.pinned && t.messages.find(x => x.status === 'pending');
-  if (m) api('POST', '/api/cancel', {threadId: t.id, msgId: m.id, drop: true}).catch(() => {});
+  if (m) api('POST', 'api/cancel', {threadId: t.id, msgId: m.id, drop: true}).catch(() => {});
 }
 function lookupBack() {
   const L = S.lookup;
@@ -2158,7 +2182,7 @@ function lookupBack() {
 async function pinLookup() {
   const item = lookupTop();
   if (!item || !item.id) return;
-  const res = await api('POST', '/api/thread', {id: item.id, pinned: true});
+  const res = await api('POST', 'api/thread', {id: item.id, pinned: true});
   S.threads[item.id] = res.thread;
   closeLookup();
   ingestThread(res.thread, true);
@@ -2167,7 +2191,7 @@ async function lookupFollowup() {
   const item = lookupTop(), t = item && S.threads[item.id], input = $('#lookup .lk-input');
   const q = input ? input.value.trim() : '';
   if (!t || !q || t.messages.some(m => m.status === 'pending')) return;
-  const res = await api('POST', '/api/ask', {threadId: t.id, question: q, ai: true});
+  const res = await api('POST', 'api/ask', {threadId: t.id, question: q, ai: true});
   input.value = '';
   S.threads[t.id] = res.thread;
   S.jobs = Math.max(S.jobs, 1);

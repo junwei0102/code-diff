@@ -5,7 +5,8 @@
 在远程机器上（检测到 `SSH_CONNECTION` 或 `CC_CLUSTER`），服务不开 TCP 端口，而是监听一个 Unix socket：
 
 - socket 在 `$XDG_RUNTIME_DIR/diff-review/`，没有这个变量时用 `/tmp/diff-review-<uid>/`。socket 权限是 0600，所在目录 0700，登录节点上的其他用户连不上。
-- `current.sock` 永远指向最近一次启动的 review。所以端口转发只要做一次，之后的每一轮、甚至换个仓库，都能接着用。
+- 每个 review 有自己的 socket（`<仓库>-<hash>.sock`）。`current.sock` 是这个节点上所有 review 共用的入口：它指向其中任意一个服务，而每个服务都能把请求转给同一节点上的其他 review，靠链接里的 `/r/<仓库>-<hash>/` 区分。所以每个节点的端口转发只要做一次，之后的每一轮、换个仓库、几个 agent 同时开着的 review，都走这一条。
+- 端口按「用户 + 集群 + 节点」算，不同节点的端口不一样。所以两个节点上（比如一个登录节点、一个计算节点）的 review 可以同时开着，各自一条转发，不会抢同一个本地端口。
 - 页面和 API 还要求一个 token（保存在 `~/.config/diff-review/token`），防止本机上的其他程序或网页冒用这个端口。
 
 为什么不用 TCP：登录节点上所有人都能连 `127.0.0.1`，而解释器能以用户的身份读代码。
@@ -44,7 +45,7 @@ ssh -fN -J <用户>@<登录地址> -L <端口>:<socket目录>/current.sock <用�
 
 ## 固定登录节点（一次设置，以后都不用管）
 
-如果你总在同一个节点上跑 Claude（比如 tmux 一直开在某个登录节点上），可以把 ssh config 固定到这个节点，并让连接自动带上转发。端口、socket 路径和 token 都不会变，`current.sock` 永远指向最新一轮 review，所以同一个链接以后一直能用，可以加进收藏夹。
+如果你总在同一个节点上跑 Claude（比如 tmux 一直开在某个登录节点上），可以把 ssh config 固定到这个节点，并让连接自动带上转发。端口、socket 路径和 token 都不会变，每个 review 的链接也一直能用。`http://localhost:<端口>/` 列出这个节点上正在跑的所有 review，可以加进收藏夹。
 
 1. 先关掉现有的主连接：它可能连在别的节点上，还占着这个端口。这会断开通过它开着的终端，但集群上的 tmux 会话不受影响。
    ```bash
