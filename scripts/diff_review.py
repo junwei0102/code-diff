@@ -65,13 +65,57 @@ LOOKUP_DIFF_BUDGET = 15000      # characters of diff in a lookup prompt: a quick
 
 EXPLAINER_TOOLS = "Read,Grep,Glob"
 DENIED_TOOLS = "Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch"
-# Set by a parent Claude Code session; the nested `claude -p` must not inherit them.
+# Set by a parent Claude Code / Antigravity session; nested subprocesses must not inherit them.
 PARENT_SESSION_VARS = (
     "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_HOST_SESSION_ID",
     "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET",
     "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_PID", "CLAUDE_CODE_SSE_PORT",
+    "ANTIGRAVITY_AGENT", "ANTIGRAVITY_TRAJECTORY_ID", "ANTIGRAVITY_CONVERSATION_ID",
+    "ANTIGRAVITY_SOURCE_METADATA", "ANTIGRAVITY_LS_ADDRESS", "ANTIGRAVITY_CSRF_TOKEN",
+    "ANTIGRAVITY_PROJECT_ID", "AGY_REQUIRE_AUTHENTICATED_UI_BOOTSTRAP",
 )
-AGENT_VAR = "CLAUDE_CODE_SESSION_ID"  # tells apart two agents (Claude sessions) pushing to the same review
+MODEL_RE = re.compile(r"^(?:(?:agy|claude):)?(?:[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,79})?$")
+CLAUDE_SHORTS = {"fable", "opus", "sonnet", "haiku"}
+CLAUDE_MODEL_OPTIONS_ZH = [
+    ["claude:", "Claude Code 默认"],
+    ["claude:fable", "Fable（最强，最慢）"],
+    ["claude:opus", "Opus（更强）"],
+    ["claude:sonnet", "Sonnet（快）"],
+    ["claude:haiku", "Haiku（最快）"],
+]
+CLAUDE_MODEL_OPTIONS_EN = [
+    ["claude:", "Claude Code default"],
+    ["claude:fable", "Fable (strongest, slowest)"],
+    ["claude:opus", "Opus (stronger)"],
+    ["claude:sonnet", "Sonnet (fast)"],
+    ["claude:haiku", "Haiku (fastest)"],
+]
+AGY_FALLBACK_MODELS = [
+    {"id": "gemini-4-neon", "label": "Gemini 4 Neon", "default": "gemini-4-neon-high",
+     "variants": {"low": "gemini-4-neon-low", "medium": "gemini-4-neon-medium", "high": "gemini-4-neon-high", "xhigh": "gemini-4-neon-xhigh"}},
+    {"id": "gemini-4-carbon", "label": "Gemini 4 Carbon", "default": "gemini-4-carbon-medium",
+     "variants": {"low": "gemini-4-carbon-low", "medium": "gemini-4-carbon-medium", "high": "gemini-4-carbon-high"}},
+    {"id": "gemini-4-argon", "label": "Gemini 4 Argon", "default": "gemini-4-argon-medium",
+     "variants": {"low": "gemini-4-argon-low", "medium": "gemini-4-argon-medium", "high": "gemini-4-argon-high"}},
+    {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "default": "gemini-3.8-flash-medium",
+     "variants": {"low": "gemini-3.8-flash-low", "medium": "gemini-3.8-flash-medium", "high": "gemini-3.8-flash-high"}},
+]
+
+
+def current_agent():
+    """Tells apart two agent sessions (Claude Code or Antigravity) pushing to the same review."""
+    return os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("ANTIGRAVITY_CONVERSATION_ID")
+
+
+def detect_caller_backend():
+    env_b = (os.environ.get("DIFF_REVIEW_BACKEND") or "").strip().lower()
+    if env_b in ("agy", "claude"):
+        return env_b
+    if os.environ.get("ANTIGRAVITY_AGENT") or os.environ.get("ANTIGRAVITY_CONVERSATION_ID"):
+        return "agy"
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return "claude"
+    return None
 # /r/<key>/...: one of the reviews running on this machine (the key is Repo.key(), also its state dir's name)
 REVIEW_PATH = re.compile(r"^/r/([A-Za-z0-9_.-]+-[0-9a-f]{10})(/.*)?$")
 LANG_NAMES = {"zh": "Simplified Chinese", "en": "English"}
@@ -761,21 +805,22 @@ def describe_tool(block, root):
         p = str(p or "")
         return os.path.relpath(p, root) if p.startswith(root + os.sep) else p
 
-    if name == "Read":
-        return {"tool": "read", "arg": rel(args.get("file_path"))}
-    if name == "Grep":
-        return {"tool": "grep", "arg": str(args.get("pattern", "")),
-                "where": rel(args.get("path")) if args.get("path") else ""}
-    if name == "Glob":
-        return {"tool": "glob", "arg": str(args.get("pattern", ""))}
+    if name in ("Read", "read_file", "view_file"):
+        return {"tool": "read", "arg": rel(args.get("file_path") or args.get("Path") or args.get("AbsolutePath"))}
+    if name in ("Grep", "grep_search"):
+        where = args.get("path") or args.get("SearchPath")
+        return {"tool": "grep", "arg": str(args.get("pattern") or args.get("Query") or ""),
+                "where": rel(where) if where else ""}
+    if name in ("Glob", "find_by_name", "list_dir"):
+        return {"tool": "glob", "arg": str(args.get("pattern") or args.get("Pattern") or rel(args.get("DirectoryPath")))}
     return {"tool": name, "arg": ""}
 
 
 def find_claude(explicit=None):
     """Locate a working Claude Code CLI; returns (path, version) or (None, "")."""
-    candidates = [explicit, os.environ.get("DIFF_REVIEW_CLAUDE"), os.environ.get("CLAUDE_CODE_EXECPATH"),
-                  shutil.which("claude"), "~/.local/bin/claude", "~/.claude/local/claude",
-                  "~/.npm-global/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+    candidates = [explicit, os.environ.get("DIFF_REVIEW_CLAUDE"), os.environ.get("VISUAL_REPORT_CLAUDE"),
+                  os.environ.get("CLAUDE_CODE_EXECPATH"), shutil.which("claude"), "~/.local/bin/claude",
+                  "~/.claude/local/claude", "~/.npm-global/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
     seen = set()
     for cand in candidates:
         if not cand:
@@ -792,6 +837,57 @@ def find_claude(explicit=None):
         if "claude code" in out.lower():
             return path, out.strip()
     return None, ""
+
+
+def find_agy(explicit=None):
+    """Locate a working Antigravity CLI (agy); returns (path, help_text) or (None, "")."""
+    candidates = [explicit, os.environ.get("DIFF_REVIEW_AGY"), os.environ.get("VISUAL_REPORT_AGY"),
+                  os.environ.get("AGY_BIN"), shutil.which("agy"), "~/.gemini/bin/agy",
+                  "~/.local/bin/agy", "/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
+    seen = set()
+    for cand in candidates:
+        if not cand:
+            continue
+        path = os.path.expanduser(cand)
+        if path in seen or not (os.path.isfile(path) and os.access(path, os.X_OK)):
+            continue
+        seen.add(path)
+        try:
+            out = subprocess.run([path, "--help"], env=child_env(), stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, timeout=20).stdout.decode("utf-8", "replace")
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if "--print" in out and "--output-format" in out:
+            return path, out
+    return None, ""
+
+
+def parse_agy_models(text):
+    """Parse `agy models` into (grouped_models, raw_labels, auth_needed)."""
+    clean = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text or "")
+    if "please sign in" in clean.lower():
+        return [], {}, True
+    raw_labels, groups, order = {}, {}, []
+    for raw_line in clean.splitlines():
+        line = raw_line.split("\r")[-1].strip()
+        m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\t+|\s{2,})(.+?)\s*$", line)
+        if not m:
+            continue
+        mid, label = m.group(1), m.group(2)
+        raw_labels[mid] = label
+        em = re.match(r"^(.+)-(low|medium|high|xhigh)$", mid)
+        if em:
+            base, eff = em.group(1), em.group(2)
+            base_label = re.sub(r"\s*\((?:Low|Medium|High|XHigh)\)\s*$", "", label, flags=re.I)
+            if base not in groups:
+                groups[base] = {"id": base, "label": base_label, "default": mid, "variants": {}}
+                order.append(base)
+            groups[base]["variants"][eff] = mid
+        else:
+            if mid not in groups:
+                groups[mid] = {"id": mid, "label": label, "default": mid, "variants": {}}
+                order.append(mid)
+    return [groups[k] for k in order], raw_labels, False
 
 
 def output_lines(proc, give_up):
@@ -821,45 +917,197 @@ class Job:
 
 
 class Explainer:
-    """Answers questions about the diff with `claude -p`, read-only and confined to the repo."""
+    """Answers questions about the diff with `agy -p` (Antigravity / Gemini) or `claude -p`, read-only in the repo."""
 
-    def __init__(self, app, explicit=None):
+    def __init__(self, app, explicit_claude=None, explicit_agy=None, backend=None):
         self.app = app
         self.lock = threading.Lock()
         self.slots = threading.Semaphore(MAX_PARALLEL_JOBS)
         self.running, self.cancelled = {}, set()
         self.active = 0
-        self.caps, self.error, self.error_code = {}, None, None
-        self.bin, self.version = find_claude(explicit)
-        if not self.bin:
-            self.error_code = "no-claude"
-            self.error = "no working claude CLI found (pass --claude /path/to/claude or set DIFF_REVIEW_CLAUDE)"
+        self.preferred_backend = backend or detect_caller_backend()
+        self.claude_bin, self.claude_version, self.claude_caps, self.claude_error = None, "", {}, None
+        self.agy_bin, self.agy_caps, self.agy_error = None, {}, None
+        self.agy_models = list(AGY_FALLBACK_MODELS)
+        self.agy_labels = {}
+        self.error, self.error_code = None, None
+        self._load_cached_agy_models()
+        self._detect_agy(explicit_agy)
+        self._detect_claude(explicit_claude)
+        self._update_summary_error()
+        if self.agy_bin:
+            threading.Thread(target=self._refresh_agy_models, daemon=True).start()
+
+    def _agy_cache_path(self):
+        return os.path.join(cache_root(), "agy-models.json")
+
+    def _load_cached_agy_models(self):
+        try:
+            cached = json.loads(read_text(self._agy_cache_path()))
+            if cached.get("models"):
+                self.agy_models = cached["models"]
+                self.agy_labels = cached.get("labels") or {}
+        except (OSError, ValueError):
+            pass
+
+    def _detect_agy(self, explicit=None):
+        path, help_text = find_agy(explicit)
+        self.agy_bin = path
+        if not path:
+            self.agy_error = "no working agy CLI found"
+            return
+        for flag in ("--disable-slash-commands", "--sandbox", "--effort", "--model"):
+            self.agy_caps[flag] = flag in help_text
+        self.agy_error = None
+
+    def _refresh_agy_models(self):
+        if not self.agy_bin:
             return
         try:
-            help_text = subprocess.run([self.bin, "--help"], env=child_env(), stdout=subprocess.PIPE,
+            out = subprocess.run([self.agy_bin, "models"], env=child_env(), stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, timeout=25).stdout.decode("utf-8", "replace")
+            models, labels, auth_needed = parse_agy_models(out)
+            if auth_needed:
+                self.agy_error = "agy not signed in (run `agy` in a terminal to sign in)"
+                self._update_summary_error()
+                return
+            if models:
+                with self.lock:
+                    self.agy_models = models
+                    self.agy_labels = labels
+                try:
+                    write_atomic(self._agy_cache_path(), json.dumps({"models": models, "labels": labels, "at": now()}))
+                except OSError:
+                    pass
+            if self.agy_error and "sign in" in self.agy_error:
+                self.agy_error = None
+                self._update_summary_error()
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    def _detect_claude(self, explicit=None):
+        self.claude_bin, self.claude_version = find_claude(explicit)
+        if not self.claude_bin:
+            self.claude_error = "no working claude CLI found (pass --claude /path/to/claude or set DIFF_REVIEW_CLAUDE)"
+            return
+        try:
+            help_text = subprocess.run([self.claude_bin, "--help"], env=child_env(), stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT, timeout=60).stdout.decode("utf-8", "replace")
         except (OSError, subprocess.SubprocessError) as e:
-            self.error_code = "help-failed"
-            self.error = "claude --help failed: %s" % e
+            self.claude_error = "claude --help failed: %s" % e
             return
         for flag in ("--include-partial-messages", "--tools", "--disallowedTools", "--no-session-persistence",
                      "--strict-mcp-config", "--settings", "--effort"):
-            self.caps[flag] = flag in help_text
-        self.caps["dontAsk"] = "dontAsk" in help_text
+            self.claude_caps[flag] = flag in help_text
+        self.claude_caps["dontAsk"] = "dontAsk" in help_text
         # A settings file (not inline JSON) works with every CLI version that has --settings.
-        self.settings_file = os.path.join(app.state_dir, "explainer-settings.json")
+        self.settings_file = os.path.join(self.app.state_dir, "explainer-settings.json")
         write_atomic(self.settings_file, json.dumps({"disableAllHooks": True}))
+        self.claude_error = None
+
+    def _update_summary_error(self):
+        if self.ready():
+            self.error, self.error_code = None, None
+        else:
+            self.error_code = "no-ai"
+            self.error = "; ".join(e for e in (self.agy_error, self.claude_error) if e) or "no working agy or claude CLI found"
+
+    def backend_ready(self, name):
+        if name == "agy":
+            return bool(self.agy_bin) and not self.agy_error
+        if name == "claude":
+            return bool(self.claude_bin) and not self.claude_error
+        return False
 
     def ready(self):
-        return bool(self.bin) and not self.error
+        return self.backend_ready("agy") or self.backend_ready("claude")
+
+    def default_backend(self):
+        for cand in (self.preferred_backend, "agy", "claude"):
+            if cand and self.backend_ready(cand):
+                return cand
+        return self.preferred_backend or ("agy" if self.agy_bin else "claude")
+
+    def model_groups(self):
+        with self.lock:
+            agy_models = list(self.agy_models)
+        zh = self.app.store.data["settings"].get("lang") != "en"
+        groups = []
+        if self.backend_ready("agy"):
+            opts = [["agy:", "Antigravity 默认" if zh else "Antigravity default"]] + [
+                ["agy:" + m["id"], m["label"]] for m in agy_models]
+            groups.append({"backend": "agy", "label": "Antigravity (Gemini)", "options": opts})
+        if self.backend_ready("claude"):
+            groups.append({"backend": "claude", "label": "Claude Code",
+                           "options": list(CLAUDE_MODEL_OPTIONS_ZH if zh else CLAUDE_MODEL_OPTIONS_EN)})
+        if self.default_backend() == "claude" and len(groups) == 2:
+            groups.reverse()
+        return groups
 
     def describe(self):
-        return {"available": self.ready(), "bin": self.bin, "version": self.version, "error": self.error,
-                "errorCode": self.error_code}
+        default_b = self.default_backend()
+        with self.lock:
+            labels = dict(self.agy_labels)
+            for m in self.agy_models:
+                labels.setdefault(m["id"], m["label"])
+        ver_parts = []
+        if self.backend_ready("agy"):
+            ver_parts.append("Antigravity (agy)")
+        if self.backend_ready("claude"):
+            ver_parts.append(self.claude_version or "Claude Code")
+        return {
+            "available": self.ready(),
+            "bin": self.agy_bin if default_b == "agy" else self.claude_bin,
+            "version": " · ".join(ver_parts) if ver_parts else "",
+            "backend": default_b,
+            "backends": {
+                "agy": {"available": self.backend_ready("agy"), "error": self.agy_error},
+                "claude": {"available": self.backend_ready("claude"), "version": self.claude_version, "error": self.claude_error},
+            },
+            "models": self.model_groups(),
+            "modelLabels": labels,
+            "error": self.error,
+            "errorCode": self.error_code,
+        }
 
-    def command(self, settings):
-        caps = self.caps
-        cmd = [self.bin, "-p", "--output-format", "stream-json", "--verbose"]
+    def resolve_target(self, settings):
+        spec = str(settings.get("model") or "").strip()
+        effort = str(settings.get("effort") or "").strip() or None
+        backend, raw = None, spec
+        with self.lock:
+            agy_models = list(self.agy_models)
+            agy_labels = dict(self.agy_labels)
+        if spec.startswith("agy:"):
+            backend, raw = "agy", spec[4:]
+        elif spec.startswith("claude:"):
+            backend, raw = "claude", spec[7:]
+        elif spec:
+            agy_ids = {m["id"] for m in agy_models} | set(agy_labels)
+            if spec in agy_ids or spec.startswith(("gemini", "gpt-oss")):
+                backend = "agy"
+            elif spec in CLAUDE_SHORTS or spec.startswith("claude"):
+                backend = "claude" if self.backend_ready("claude") else ("agy" if spec in agy_ids else "claude")
+        if not backend:
+            backend = self.default_backend()
+        if backend == "agy" and raw:
+            for m in agy_models:
+                if raw == m["id"]:
+                    variants = m.get("variants") or {}
+                    if effort and variants:
+                        if effort in variants:
+                            raw = variants[effort]
+                        elif effort == "max":
+                            raw = variants.get("xhigh") or variants.get("high") or m["default"]
+                        else:
+                            raw = m["default"]
+                    else:
+                        raw = m["default"]
+                    break
+        return backend, raw or None, effort
+
+    def command_claude(self, model, effort):
+        caps = self.claude_caps
+        cmd = [self.claude_bin, "-p", "--output-format", "stream-json", "--verbose"]
         if caps.get("--include-partial-messages"):
             cmd.append("--include-partial-messages")
         if caps.get("--tools"):
@@ -874,10 +1122,24 @@ class Explainer:
             cmd.append("--strict-mcp-config")
         if caps.get("--settings"):
             cmd += ["--settings", self.settings_file]
-        if settings.get("model"):
-            cmd += ["--model", settings["model"]]
-        if settings.get("effort") and caps.get("--effort"):
-            cmd += ["--effort", settings["effort"]]
+        if model:
+            cmd += ["--model", model]
+        if effort and caps.get("--effort"):
+            cmd += ["--effort", effort]
+        return cmd
+
+    def command_agy(self, prompt, model, effort):
+        caps = self.agy_caps
+        cmd = [self.agy_bin, "--output-format", "stream-json"]
+        if caps.get("--disable-slash-commands"):
+            cmd.append("--disable-slash-commands")
+        if caps.get("--sandbox"):
+            cmd.append("--sandbox")
+        if model and caps.get("--model"):
+            cmd += ["--model", model]
+        if effort and caps.get("--effort"):
+            cmd += ["--effort", effort]
+        cmd += ["--print", prompt]
         return cmd
 
     def submit(self, job):
@@ -953,7 +1215,77 @@ class Explainer:
                     self.cancelled.discard(job.key)
 
     def _exec(self, job):
-        proc = subprocess.Popen(self.command(job.settings), cwd=self.app.repo.root, env=child_env(),
+        backend, model, effort = self.resolve_target(job.settings)
+        if not self.backend_ready(backend):
+            err = self.agy_error if backend == "agy" else self.claude_error
+            self.app.job_done(job, None, err or self.error or "explainer backend unavailable")
+            return
+        if backend == "agy":
+            return self._exec_agy(job, model, effort)
+        return self._exec_claude(job, model, effort)
+
+    def _exec_agy(self, job, model, effort):
+        proc = subprocess.Popen(self.command_agy(job.prompt, model, effort), cwd=self.app.repo.root, env=child_env(),
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                start_new_session=True)
+        with self.lock:
+            self.running[job.key] = proc
+        errors = []
+        err_reader = threading.Thread(target=lambda: errors.append(proc.stderr.read()), daemon=True)
+        err_reader.start()
+        deadline = now() + JOB_TIMEOUT
+        final = error = None
+        has_text = False
+        last_text_step = None
+        for raw in output_lines(proc, give_up=lambda: now() > deadline or self.was_cancelled(job)):
+            try:
+                ev = json.loads(raw.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            kind = ev.get("event")
+            if kind == "init":
+                init_info = ev.get("init") or {}
+                if init_info.get("model"):
+                    self.app.job_model(job, str(init_info["model"]))
+            elif kind == "step_update":
+                su = ev.get("step_update") or {}
+                stype = su.get("step_type")
+                if stype == "tool" and su.get("state") == "ACTIVE":
+                    tinfo = su.get("tool_info") or {}
+                    block = {"name": tinfo.get("name") or su.get("tool_name") or "tool",
+                             "input": tinfo.get("parameters") or {}}
+                    self.app.job_tool(job, describe_tool(block, self.app.repo.root))
+                elif stype == "agent_response" and su.get("text_delta"):
+                    idx = su.get("step_index")
+                    if has_text and last_text_step is not None and idx != last_text_step:
+                        self.app.job_text(job, "\n\n")
+                    has_text = True
+                    last_text_step = idx
+                    self.app.job_text(job, su["text_delta"])
+            elif kind == "result":
+                res = ev.get("result") or {}
+                if res.get("status") != "SUCCESS":
+                    error = str(res.get("error") or res.get("status") or "unknown error")
+                else:
+                    final = res.get("response") or ""
+                break
+        self._stop(proc)
+        err_reader.join(2)
+        if self.was_cancelled(job):
+            self.app.job_done(job, None, None, cancelled=True)
+            return
+        if final is None and error is None and now() > deadline:
+            error = self.app.tr("解释器 %d 分钟还没答完，已经停掉了。可以再问一次。",
+                                "The explainer hadn't answered after %d minutes and was stopped. Try asking again.") % (JOB_TIMEOUT // 60)
+        elif final is None and error is None:
+            tail = b"".join(errors).decode("utf-8", "replace").strip()[-1500:]
+            error = self.app.tr("agy 退出了（exit %s）", "agy exited (exit %s)") % proc.returncode
+            if tail:
+                error += "\n" + tail
+        self.app.job_done(job, final, error)
+
+    def _exec_claude(self, job, model, effort):
+        proc = subprocess.Popen(self.command_claude(model, effort), cwd=self.app.repo.root, env=child_env(),
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 start_new_session=True)
         with self.lock:
@@ -969,14 +1301,16 @@ class Explainer:
         deadline = now() + JOB_TIMEOUT
         final = error = cost = None
         has_text = False
-        partial = self.caps.get("--include-partial-messages")
+        partial = self.claude_caps.get("--include-partial-messages")
         for raw in output_lines(proc, give_up=lambda: now() > deadline or self.was_cancelled(job)):
             try:
                 ev = json.loads(raw.decode("utf-8", "replace"))
             except ValueError:
                 continue
             kind = ev.get("type")
-            if kind == "stream_event":
+            if kind == "system" and ev.get("subtype") == "init" and ev.get("model"):
+                self.app.job_model(job, str(ev["model"]))
+            elif kind == "stream_event":
                 e = ev.get("event") or {}
                 if e.get("type") == "message_start" and has_text:
                     self.app.job_text(job, "\n\n")
@@ -1144,12 +1478,12 @@ class App:
         self.files, self.skipped, self.by_path = [], [], {}
         self.notes = {"summary": "", "files": {}}
         self.diff_version = 0
-        self.explainer = Explainer(self, opts.claude)
+        self.explainer = Explainer(self, opts.claude, opts.agy, opts.backend)
         if opts.model is not None:
             self.store.data["settings"]["model"] = opts.model
         self.end_orphaned_runs()
         self.refresh(notes=read_optional(opts.notes), replies=read_replies(opts.replies),
-                     agent=os.environ.get(AGENT_VAR))
+                     agent=current_agent())
 
     # -- diff, rounds and author replies
 
@@ -1457,6 +1791,14 @@ class App:
         msg = next((m for m in t["messages"] if m["id"] == job.msg_id), None) if t else None
         return (t, msg) if msg and msg.get("status") == "pending" else (None, None)
 
+    def job_model(self, job, model_name):
+        with self.store.lock:
+            obj, msg = self._target(job)
+            if obj is None or msg is None:
+                return
+            msg["model"] = model_name
+            self.store.bump(obj)
+
     def job_text(self, job, text):
         with self.store.lock:
             obj, msg = self._target(job)
@@ -1638,7 +1980,7 @@ class App:
             settings = self.store.data["settings"]
             if "model" in body:
                 model = str(body.get("model") or "").strip()
-                if model and not re.match(r"^[A-Za-z0-9._\[\]-]+$", model):
+                if model and not MODEL_RE.match(model):
                     raise ApiError(400, "bad model name")
                 settings["model"] = model
             if body.get("lang") in LANG_NAMES:
@@ -2310,10 +2652,11 @@ def resolve_paths(opts):
 
 def serve_args(opts, repo):
     args = ["--repo", repo.root]
+    backend = opts.backend or detect_caller_backend()
     for flag, value in (("--patch", opts.patch), ("--base", opts.base), ("--notes", opts.notes),
                         ("--replies", opts.replies), ("--listen", opts.listen), ("--port", opts.port),
-                        ("--host", opts.host), ("--model", opts.model), ("--claude", opts.claude),
-                        ("--idle-hours", opts.idle_hours)):
+                        ("--host", opts.host), ("--model", opts.model), ("--backend", backend),
+                        ("--claude", opts.claude), ("--agy", opts.agy), ("--idle-hours", opts.idle_hours)):
         if value is not None:
             args += [flag, str(value)]
     for pattern in opts.exclude or []:
@@ -2331,7 +2674,7 @@ def cmd_start(opts):
     sdir = state_dir(repo)
     info = live_server(sdir)
     if info:
-        me, owner = os.environ.get(AGENT_VAR), info["ping"].get("agent")
+        me, owner = current_agent(), info["ping"].get("agent")
         if me and owner and owner != me and not info["ping"].get("submitted") and not opts.take_over:
             print(ANOTHER_AGENT % info["ping"]["round"])
             return 1
@@ -2380,7 +2723,7 @@ def cmd_wait(opts):
     if not info:
         print("没有正在运行的 diff-review（先运行 start）。")
         return 2
-    rnd, me = info["ping"]["round"], os.environ.get(AGENT_VAR)
+    rnd, me = info["ping"]["round"], current_agent()
     deadline = now() + opts.timeout if opts.timeout else None
     failures = 0
     while True:
@@ -2487,8 +2830,10 @@ def main(argv=None):
         p.add_argument("--listen", choices=("tcp", "unix"), help="default: unix over SSH/on clusters, tcp locally")
         p.add_argument("--port", type=int, help="TCP port (tcp) or suggested local port for the SSH forward (unix)")
         p.add_argument("--host", default="127.0.0.1", help="TCP bind address (default 127.0.0.1)")
-        p.add_argument("--model", help="explainer model, e.g. sonnet / opus / haiku (default: your Claude Code default)")
+        p.add_argument("--backend", choices=("agy", "claude"), help="default explainer backend (agy=Antigravity/Gemini, claude=Claude Code; auto-detected by default)")
+        p.add_argument("--model", help="explainer model, e.g. agy:gemini-4-neon or claude:sonnet (default: active backend's default)")
         p.add_argument("--claude", help="path to the claude CLI")
+        p.add_argument("--agy", help="path to the agy (Antigravity) CLI")
         p.add_argument("--idle-hours", type=float, default=6, help="exit after this long without activity (0 = never)")
         p.add_argument("--verbose", action="store_true")
 

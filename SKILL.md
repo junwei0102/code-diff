@@ -110,7 +110,7 @@ python3 <skill>/scripts/diff_review.py wait --repo <root>
 
 | 现象 | 处理 |
 |---|---|
-| 页面提示「AI 解释不可用」 | 用户仍然可以把问题留给作者，或者直接打回。要恢复 AI 解释：重启时用 `--claude /path/to/claude` 或环境变量 `DIFF_REVIEW_CLAUDE` 指定 Claude Code 的路径 |
+| 页面提示「AI 解释不可用」 | 用户仍然可以把问题留给作者，或者直接打回。要恢复 AI 解释：确保本机已装并登录 `agy`（Antigravity CLI）或 `claude`（Claude Code），或重启时用 `--agy` / `--claude`（环境变量 `DIFF_REVIEW_AGY` / `DIFF_REVIEW_CLAUDE`）指定路径 |
 | `needs Python >= 3.7` | 集群上先 `module load python`。任意 3.x 都行，不用装任何包 |
 | 用户在远程打不开页面 | 端口转发没做，或者转发落到了别的登录节点。见 `references/remote-clusters.md` |
 | 想换 base，或者从头来 | 先 `stop` 再 `start`。`start --new-round` 可以强制开新一轮 |
@@ -118,4 +118,4 @@ python3 <skill>/scripts/diff_review.py wait --repo <root>
 | `wait` 说这一轮被另一个会话接管了 | 告诉用户，不要再推送这一轮 |
 | 查看运行状态 | `status --repo <root>`：显示链接、socket、当前轮次 |
 
-解释器用的模型、思考力度和语言，可以在页面右上角 ⚙ 里改；`start --model sonnet` 用来设默认值。
+解释器支持 Antigravity（`agy`）和 Claude Code（`claude`）双后端，默认自动跟随启动它的 agent，并在页面右上角 ⚙ 里自由切换模型、思考力度和语言；`start --backend agy|claude --model ...` 用来设默认值。

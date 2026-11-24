@@ -445,8 +445,8 @@ const I18N = {
     'verdict.approve': '✅ 通过',
     'verdict.comment': '💬 只提问',
     'verdict.changes': '↩️ 打回修改',
-    'ai.noClaude': '找不到能用的 claude 命令（用 --claude /path/to/claude 或环境变量 DIFF_REVIEW_CLAUDE 指定）',
-    'ai.helpFailed': '运行 claude --help 失败',
+    'ai.noClaude': '找不到能用的 agy（Antigravity）或 claude 命令（用 --agy / --claude 或环境变量 DIFF_REVIEW_AGY / DIFF_REVIEW_CLAUDE 指定）',
+    'ai.helpFailed': '运行 AI 命令 --help 失败',
     'intro.notes': '✍️ 作者说明',
     'intro.notesSub': n => `第 ${n} 轮 · 写代码的 agent 自己写的`,
     'intro.noNotes': 'agent 这次没有写整体说明。',
@@ -598,12 +598,12 @@ const I18N = {
     'rev.title': n => `第 ${n} 轮提交的内容`,
     'set.title': '设置',
     'set.model': '解释用的模型',
-    'set.models': [['', '默认（跟随你的 Claude Code 设置）'], ['sonnet', 'Sonnet（快）'], ['opus', 'Opus（更强）'], ['haiku', 'Haiku（最快）']],
+    'set.models': [['', '默认（跟随当前后端设置）'], ['claude:fable', 'Fable（最强，最慢）'], ['claude:opus', 'Opus（更强）'], ['claude:sonnet', 'Sonnet（快）'], ['claude:haiku', 'Haiku（最快）']],
     'set.effort': '思考力度',
-    'set.efforts': [['', '默认'], ['low', '低（更快）'], ['medium', '中'], ['high', '高（更细）']],
+    'set.efforts': [['', '默认'], ['low', '低（更快）'], ['medium', '中'], ['high', '高（更细）'], ['xhigh', '很高（慢）'], ['max', '最高（最慢）']],
     'set.langHint': '界面语言和 AI 回答的语言，用右上角的 EN / 中文 按钮切换。',
     'set.autoLookup': '选中代码或解释里的文字后，自动弹出白话解释',
-    'set.autoLookupHint': '关掉以后，选中文字只会先出一个「💡 白话解释」按钮，点了才去问 AI。每次解释都会用掉一点 Claude 额度。',
+    'set.autoLookupHint': '关掉以后，选中文字只会先出一个「💡 白话解释」按钮，点了才去问 AI。每次解释都会用掉一点 AI 额度。',
     'set.ai': 'AI：',
     'set.unavailable': '不可用 — ',
     'set.server': '服务：',
@@ -683,8 +683,8 @@ const I18N = {
     'verdict.approve': '✅ Approved',
     'verdict.comment': '💬 Questions only',
     'verdict.changes': '↩️ Changes requested',
-    'ai.noClaude': 'No working claude CLI found (pass --claude /path/to/claude or set DIFF_REVIEW_CLAUDE)',
-    'ai.helpFailed': 'running claude --help failed',
+    'ai.noClaude': 'No working agy (Antigravity) or claude CLI found (pass --agy / --claude or set DIFF_REVIEW_AGY / DIFF_REVIEW_CLAUDE)',
+    'ai.helpFailed': 'running AI CLI --help failed',
     'intro.notes': "✍️ Author's notes",
     'intro.notesSub': n => `Round ${n} · written by the agent that made the change`,
     'intro.noNotes': "The agent didn't write overall notes this time.",
@@ -836,12 +836,12 @@ const I18N = {
     'rev.title': n => `Round ${n} submission`,
     'set.title': 'Settings',
     'set.model': 'Explainer model',
-    'set.models': [['', 'Default (your Claude Code setting)'], ['sonnet', 'Sonnet (fast)'], ['opus', 'Opus (stronger)'], ['haiku', 'Haiku (fastest)']],
+    'set.models': [['', 'Default (active backend setting)'], ['claude:fable', 'Fable (strongest, slowest)'], ['claude:opus', 'Opus (stronger)'], ['claude:sonnet', 'Sonnet (fast)'], ['claude:haiku', 'Haiku (fastest)']],
     'set.effort': 'Reasoning effort',
-    'set.efforts': [['', 'Default'], ['low', 'Low (faster)'], ['medium', 'Medium'], ['high', 'High (more thorough)']],
+    'set.efforts': [['', 'Default'], ['low', 'Low (faster)'], ['medium', 'Medium'], ['high', 'High (more thorough)'], ['xhigh', 'Very high (slower)'], ['max', 'Max (slowest)']],
     'set.langHint': 'The EN / 中文 button (top right) switches the page and the AI answers between English and Chinese.',
     'set.autoLookup': 'Explain selected text automatically (in the code or in an explanation)',
-    'set.autoLookupHint': 'When off, selecting text only shows a “💡 Explain simply” button, and the AI is asked when you click it. Each explanation uses some Claude quota.',
+    'set.autoLookupHint': 'When off, selecting text only shows a “💡 Explain simply” button, and the AI is asked when you click it. Each explanation uses some AI quota.',
     'set.ai': 'AI: ',
     'set.unavailable': 'unavailable — ',
     'set.server': 'Server: ',
@@ -1106,9 +1106,21 @@ function baseLabel() {
   return `${r.base}${r.baseSha ? ' (' + r.baseSha + ')' : ''} → ${T('base.worktree')}`;
 }
 function aiError() {
-  if (S.ai.errorCode === 'no-claude') return T('ai.noClaude');
+  if (S.ai.errorCode === 'no-claude' || S.ai.errorCode === 'no-ai') return T('ai.noClaude');
   if (S.ai.errorCode === 'help-failed') return T('ai.helpFailed') + (S.ai.error ? ` (${S.ai.error})` : '');
   return S.ai.error || '';
+}
+function prettyModel(id) {
+  if (!id) return '';
+  const labels = (S.ai && S.ai.modelLabels) || {};
+  const bare = String(id).replace(/^(?:agy|claude):/, '');
+  if (labels[id]) return labels[id];
+  if (labels[bare]) return labels[bare];
+  const cm = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?!\d)/.exec(bare);
+  if (cm) return cm[1][0].toUpperCase() + cm[1].slice(1) + ' ' + cm[2] + (cm[3] ? '.' + cm[3] : '');
+  const gm = /^gemini-([0-9.]+)-([a-z]+)(?:-(low|medium|high|xhigh))?$/i.exec(bare);
+  if (gm) return 'Gemini ' + gm[1] + ' ' + gm[2][0].toUpperCase() + gm[2].slice(1) + (gm[3] ? ' (' + gm[3] + ')' : '');
+  return bare || (id === 'agy:' ? 'Antigravity' : id === 'claude:' ? 'Claude Code' : id);
 }
 function skipText(s) {
   if (s.code === 'big-dir') return T('skip.bigDir', s.n);
@@ -1525,7 +1537,7 @@ function msgHTML(m, t) {
   const who = esc(T(m.role === 'user' ? 'msg.you' : m.role === 'ai' ? 'msg.ai' : 'msg.author'));
   const meta = [];
   if (m.round && m.round !== t.round) meta.push(T('lbl.round', m.round));
-  if (m.role === 'ai' && m.model) meta.push(m.model);
+  if (m.role === 'ai' && m.model) meta.push(prettyModel(m.model));
   let html = `<div class="who">${who}${meta.length ? ` <span class="muted">· ${esc(meta.join(' · '))}</span>` : ''}</div>`;
   if (m.role === 'user') html += `<div class="plain">${esc(m.text)}</div>`;
   else if (m.role === 'ai' && m.status === 'done' && m.round && m.round < S.round) return `<details class="old-ai"><summary>${who} · ${esc(T('msg.oldAi', m.round))}</summary><div class="md">${md(m.text, t.file)}</div></details>`;
@@ -1886,15 +1898,32 @@ async function showReview(round) {
 }
 function openSettings() {
   const s = S.settings;
-  const models = T('set.models').some(m => m[0] === (s.model || '')) ? T('set.models') : T('set.models').concat([[s.model, s.model]]);
+  const cur = s.model || '';
+  const groups = (S.ai && Array.isArray(S.ai.models) && S.ai.models.length) ? S.ai.models : null;
+  const defBackend = S.ai && S.ai.backend === 'agy' ? 'Antigravity' : S.ai && S.ai.backend === 'claude' ? 'Claude Code' : '';
+  const defLabel = defBackend ? (S.settings.lang === 'en' ? `Default (${defBackend})` : `默认（${defBackend}）`) : T('set.models')[0][1];
   const sel = (id, list, value) => `<select id="${id}">${list.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  let modelSel;
+  if (groups) {
+    const seen = new Set(['']);
+    const body = [`<option value="" ${cur === '' ? 'selected' : ''}>${esc(defLabel)}</option>`];
+    groups.forEach(g => {
+      const opts = (g.options || []).map(([v, l]) => { seen.add(v); return `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`; }).join('');
+      body.push(`<optgroup label="${esc(g.label)}">${opts}</optgroup>`);
+    });
+    if (cur && !seen.has(cur)) body.push(`<option value="${esc(cur)}" selected>${esc(prettyModel(cur))}</option>`);
+    modelSel = `<select id="set-model">${body.join('')}</select>`;
+  } else {
+    const models = T('set.models').some(m => m[0] === cur) ? T('set.models') : T('set.models').concat([[cur, prettyModel(cur)]]);
+    modelSel = sel('set-model', models, cur);
+  }
   openModal(`<h2>${esc(T('set.title'))}</h2>
-    <label class="field">${esc(T('set.model'))} ${sel('set-model', models, s.model || '')}</label>
+    <label class="field">${esc(T('set.model'))} ${modelSel}</label>
     <label class="field">${esc(T('set.effort'))} ${sel('set-effort', T('set.efforts'), s.effort || '')}</label>
     <label class="chk"><input type="checkbox" id="set-auto-lookup" ${autoLookup() ? 'checked' : ''}> ${esc(T('set.autoLookup'))}</label>
     <p class="muted small">${esc(T('set.autoLookupHint'))}</p>
     <p class="muted small">${esc(T('set.langHint'))}</p>
-    <div class="muted small">${esc(T('set.ai'))}${S.ai.available ? esc(S.ai.version || 'claude') : esc(T('set.unavailable') + aiError())}<br>
+    <div class="muted small">${esc(T('set.ai'))}${S.ai.available ? esc(S.ai.version || 'AI') : esc(T('set.unavailable') + aiError())}<br>
       ${esc(T('set.server'))}${esc(S.repo.host || '')} · ${esc(S.listen.mode || '')} · ${esc(S.repo.root || '')}</div>
     <div class="row"><span class="spacer"></span><button class="btn" data-act="modal-close">${esc(T('common.cancel'))}</button><button class="btn primary" data-act="save-settings">${esc(T('common.save'))}</button></div>`, '', true);
 }
