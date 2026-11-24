@@ -216,9 +216,13 @@ tr.anno-head > td { padding-top: 4px; padding-bottom: 4px; background: var(--ai-
 .bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--sel-num); border-radius: 8px; background: var(--bg); box-shadow: var(--shadow); max-width: 940px; }
 .composer { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; background: var(--bg); box-shadow: var(--shadow); max-width: 940px; }
 .composer.is-change { border-color: var(--warn); }
+.composer.is-edit { border-color: var(--ok); }
 .cmp-title { font-weight: 600; margin-bottom: 6px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .composer textarea, .th-compose textarea, .modal textarea { width: 100%; resize: vertical; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); margin-bottom: 6px; line-height: 1.5; }
+.code-editor { font-family: var(--mono) !important; font-size: 13px !important; line-height: 1.55 !important; tab-size: 4; white-space: pre; overflow: auto; }
+.ed-modal-ta { height: 62vh; min-height: 280px; }
+.chip.c-edit { color: var(--ok); border-color: var(--ok); }
 .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
 
 /* threads */
@@ -476,6 +480,9 @@ const I18N = {
     'file.askTip': '问一个关于整个文件的问题',
     'file.view': ' 完整文件',
     'file.viewTip': '看完整文件',
+    'file.edit': ' 编辑',
+    'file.editTip': '直接编辑这个文件并写回本地工作区',
+    'file.edited': '已手动编辑',
     'file.ok': ' 看懂了',
     'file.okTip': '看懂了，没问题（会折叠起来）',
     'file.bad': ' 需重写',
@@ -532,6 +539,7 @@ const I18N = {
     'sel.explain': '💬 这段在干嘛？',
     'sel.ask': '❓ 提问…',
     'sel.annotate': '📖 逐行讲解',
+    'sel.edit': '✏️ 改这几行',
     'sel.change': '🚩 这里要改…',
     'sel.hint': 'Shift+点行号扩选 · Esc 取消',
     'key': k => `快捷键 ${k}`,
@@ -547,6 +555,9 @@ const I18N = {
     'lk.btnTip': '让 AI 用大白话解释选中的内容',
     'cmp.changeTitle': '🚩 这段要怎么改？（打回时交给 agent）',
     'cmp.askTitle': l => `❓ 关于 ${l} 的问题`,
+    'cmp.editTitle': (p, l) => `✏️ 直接编辑 ${p} · ${l}（保存即写回磁盘并刷新 diff）`,
+    'cmp.editHint': 'Ctrl/⌘+S 或 Ctrl/⌘+Enter 保存 · Tab 缩进 · 清空内容会删除这几行',
+    'cmp.saveEdit': '保存并刷新',
     'cmp.changePh': '写下你希望的改法…（Ctrl/⌘+Enter 发送）',
     'cmp.askPh': '你的问题…（Ctrl/⌘+Enter 发送）',
     'cmp.saveChange': '记下修改意见',
@@ -568,12 +579,18 @@ const I18N = {
     'toast.tooManyRows': '一次最多逐行讲解 400 行：选一段（点行号，Shift+点击扩展），或者在 hunk 标题上点「逐行讲解这段」',
     'toast.notInDiff': '这个文件不在 diff 里',
     'toast.saved': '已保存',
+    'toast.editSaved': '已写回文件并刷新 diff',
+    'toast.editNoChange': '内容没有变化',
     'vf.new': '新版本',
     'vf.old': '旧版本',
     'vf.changedHint': '高亮的是改动过的行',
     'vf.seeNew': '看新版本',
     'vf.seeOld': '看旧版本',
+    'vf.edit': '✏️ 编辑文件',
     'vf.close': '关闭 (Esc)',
+    'ed.editing': '直接编辑',
+    'ed.hint': 'Ctrl/⌘+S 保存 · Tab 缩进 · 保存后立即写回磁盘并刷新 diff',
+    'sub.editedFiles': n => `✏️ 已手动编辑 <b>${n}</b> 个文件（提交时会把你的改动 diff 告知 agent）`,
     'sub.already': n => `第 ${n} 轮已经提交了，等 agent 推送下一轮`,
     'sub.title': n => `提交第 ${n} 轮 review`,
     'sub.approve': '✅ 通过',
@@ -714,6 +731,9 @@ const I18N = {
     'file.askTip': 'Ask about the whole file',
     'file.view': ' Full file',
     'file.viewTip': 'View the full file',
+    'file.edit': ' Edit',
+    'file.editTip': 'Edit this file directly in the working tree',
+    'file.edited': 'edited',
     'file.ok': ' Understood',
     'file.okTip': 'Understood, looks fine (folds the file)',
     'file.bad': ' Needs rewrite',
@@ -770,6 +790,7 @@ const I18N = {
     'sel.explain': '💬 What does this do?',
     'sel.ask': '❓ Ask…',
     'sel.annotate': '📖 Walk through',
+    'sel.edit': '✏️ Edit lines',
     'sel.change': '🚩 Needs change…',
     'sel.hint': 'Shift+click to extend · Esc to cancel',
     'key': k => `Shortcut: ${k}`,
@@ -785,6 +806,9 @@ const I18N = {
     'lk.btnTip': 'Have the AI explain the selection in plain words',
     'cmp.changeTitle': '🚩 How should this change? (goes to the agent when you send it back)',
     'cmp.askTitle': l => `❓ Question about ${l}`,
+    'cmp.editTitle': (p, l) => `✏️ Edit ${p} · ${l} (saves directly to disk and refreshes diff)`,
+    'cmp.editHint': 'Ctrl/⌘+S or Ctrl/⌘+Enter to save · Tab to indent · empty deletes these lines',
+    'cmp.saveEdit': 'Save & refresh',
     'cmp.changePh': 'Describe how you want it changed… (Ctrl/⌘+Enter to send)',
     'cmp.askPh': 'Your question… (Ctrl/⌘+Enter to send)',
     'cmp.saveChange': 'Add change request',
@@ -806,12 +830,18 @@ const I18N = {
     'toast.tooManyRows': 'At most 400 lines per walkthrough: select a range (click a line number, Shift+click to extend) or use “Walk through this hunk”.',
     'toast.notInDiff': 'That file is not in the diff',
     'toast.saved': 'Saved',
+    'toast.editSaved': 'Saved to disk and refreshed diff',
+    'toast.editNoChange': 'No changes made',
     'vf.new': 'new version',
     'vf.old': 'old version',
     'vf.changedHint': 'Highlighted lines were changed',
     'vf.seeNew': 'View new version',
     'vf.seeOld': 'View old version',
+    'vf.edit': '✏️ Edit file',
     'vf.close': 'Close (Esc)',
+    'ed.editing': 'editing',
+    'ed.hint': 'Ctrl/⌘+S to save · Tab to indent · writes to disk and refreshes the diff',
+    'sub.editedFiles': n => `✏️ Directly edited <b>${n}</b> file${plural(n)} (your edit diff will be sent to the agent)`,
     'sub.already': n => `Round ${n} is already submitted; wait for the agent to push the next round`,
     'sub.title': n => `Submit review · round ${n}`,
     'sub.approve': '✅ Approve',
@@ -985,7 +1015,9 @@ function rerender() {  // everything again, e.g. after switching the language
 function applyState(st, initial) {
   Object.assign(S, {version: st.version, round: st.round, rounds: st.rounds || {}, settings: st.settings || {}, jobs: st.jobs || 0});
   const verdictsChanged = JSON.stringify(st.verdicts || {}) !== JSON.stringify(S.verdicts);
+  const editsChanged = JSON.stringify(st.editedFiles || []) !== JSON.stringify(S.editedFiles || []);
   S.verdicts = st.verdicts || {};
+  S.editedFiles = st.editedFiles || [];
   const touched = new Set();
   for (const id of st.deleted || []) {
     // A lookup that only lived in its popover was never on the page: re-placing the file's threads
@@ -1008,7 +1040,7 @@ function applyState(st, initial) {
   if (initial) return;
   touched.forEach(placeExtras);
   if (S.lookup) renderLookup();
-  if (verdictsChanged) S.files.forEach(f => refreshFileHead(f));
+  if (verdictsChanged || editsChanged) S.files.forEach(f => refreshFileHead(f));
   renderSidebar();
   renderHeader();
   renderBanners();
@@ -1060,6 +1092,16 @@ const floating = t => !!t.lookup && !t.pinned;  // a select-to-explain lookup th
 const threadsOf = path => Object.values(S.threads).filter(t => t.file === path && !floating(t)).sort(byId);
 const annosOf = path => Object.values(S.annos).filter(a => a.file === path).sort(byId);
 const isGlobal = t => !t.file || !S.byPath[t.file];
+function canEditFile(f) {
+  return !!(S.repo && S.repo.editable && f && f.status !== 'D' && !f.binary && !f.skipped && !(f.meta || []).includes('symlink'));
+}
+function selectionNewRange(f, a, b) {
+  const ns = f.rows.slice(a, b + 1).filter(r => r.n != null).map(r => r.n);
+  return ns.length ? {start: ns[0], end: ns[ns.length - 1]} : null;
+}
+function isEditedFile(path) {
+  return Array.isArray(S.editedFiles) && S.editedFiles.includes(path);
+}
 function needsAuthor(t) {
   if (t.resolved || !(t.kind === 'change' || t.askAuthor)) return false;
   let lastUser = -1, lastAuthor = -1;
@@ -1167,7 +1209,7 @@ function fileItemHTML(f) {
   return `<a class="fi ${v ? 'v-' + v : ''}" href="#" data-act="goto-file" data-path="${esc(f.path)}" title="${esc(f.path)}">
     <span class="st st-${f.untracked ? 'U' : f.status}" title="${f.untracked ? esc(T('side.untracked')) : ''}">${f.untracked ? 'U' : f.status}</span>
     <span class="fname"><span class="base">${esc(base)}</span><span class="dir">${esc(dir)}</span></span>
-    <span class="fmeta">${nChange ? `<span>🚩${nChange}</span>` : ''}${nQ ? `<span>💬${nQ}</span>` : ''}${v === 'ok' ? '<span class="b-ok">✓</span>' : v === 'rewrite' ? '<span class="b-bad">✗</span>' : ''}</span></a>`;
+    <span class="fmeta">${isEditedFile(f.path) ? `<span title="${esc(T('file.edited'))}">✏️</span>` : ''}${nChange ? `<span>🚩${nChange}</span>` : ''}${nQ ? `<span>💬${nQ}</span>` : ''}${v === 'ok' ? '<span class="b-ok">✓</span>' : v === 'rewrite' ? '<span class="b-bad">✗</span>' : ''}</span></a>`;
 }
 function renderSidebar() {
   const q = $('#filter').value.trim().toLowerCase();
@@ -1260,11 +1302,13 @@ function fileHeadHTML(f) {
     <span class="st st-${f.untracked ? 'U' : f.status}">${f.untracked ? 'U' : f.status}</span>
     <span class="path mono" data-act="fold">${name}</span>
     ${f.untracked ? `<span class="chip tiny">${esc(T('file.untracked'))}</span>` : ''}
+    ${isEditedFile(f.path) ? `<span class="chip tiny c-edit">✏️ ${esc(T('file.edited'))}</span>` : ''}
     <span class="cnt"><span class="add">+${f.additions}</span> <span class="del">−${f.deletions}</span></span>
     <span class="spacer"></span>
     ${f.rows.length && S.ai.available ? `<button class="btn sm ghost" data-act="annotate-file" ${tip('file.annotateTip')}>📖${lbl('file.annotate')}</button>` : ''}
     <button class="btn sm ghost" data-act="ask-file" ${tip('file.askTip')}>❓${lbl('file.ask')}</button>
     ${S.repo.patch ? '' : `<button class="btn sm ghost" data-act="view-file" ${tip('file.viewTip')}>🗎${lbl('file.view')}</button>`}
+    ${canEditFile(f) ? `<button class="btn sm ghost" data-act="edit-file" ${tip('file.editTip')}>✏️${lbl('file.edit')}</button>` : ''}
     <button class="btn sm verdict-ok ${v === 'ok' ? 'on' : ''}" data-act="verdict-ok" ${tip('file.okTip')}>✓${lbl('file.ok')}</button>
     <button class="btn sm verdict-bad ${v === 'rewrite' ? 'on' : ''}" data-act="verdict-bad" ${tip('file.badTip')}>✗${lbl('file.bad')}</button>`;
 }
@@ -1619,10 +1663,15 @@ function placeActbar() {
   }
   const td = S.actbar.firstElementChild;
   if (S.composer) {
-    if (td.dataset.mode !== S.composer.mode) {
+    const key = S.composer.mode === 'edit' ? `edit:${S.composer.startLine}-${S.composer.endLine}:${S.composer.baseHash}` : S.composer.mode;
+    if (td.dataset.mode !== key) {
       td.innerHTML = composerHTML(S.composer.mode, f);
-      td.dataset.mode = S.composer.mode;
-      setTimeout(() => { const ta = td.querySelector('textarea'); if (ta) ta.focus(); }, 0);
+      td.dataset.mode = key;
+      const ta = td.querySelector('textarea');
+      if (ta) {
+        if (S.composer.mode === 'edit') ta.value = S.composer.text || '';
+        setTimeout(() => ta.focus(), 0);
+      }
     }
   } else {
     td.innerHTML = actbarHTML(f);
@@ -1632,11 +1681,13 @@ function placeActbar() {
 }
 function actbarHTML(f) {
   const ai = S.ai.available;
+  const editable = canEditFile(f) && !!selectionNewRange(f, S.sel.a, S.sel.b);
   const btn = (act, key, cls, k) => `<button class="btn sm ${cls}" data-act="${act}" title="${esc(T('key', k))}">${esc(T(key))}</button>`;
   return `<div class="bar"><span class="muted small">${T('sel.selected', esc(rangeLabel(f, S.sel.a, S.sel.b)))}</span>
     ${ai ? btn('sel-explain', 'sel.explain', 'ai', 'e') : ''}
     ${btn('sel-ask', 'sel.ask', '', 'q')}
     ${ai ? btn('sel-annotate', 'sel.annotate', '', 'a') : ''}
+    ${editable ? btn('sel-edit', 'sel.edit', '', 'i') : ''}
     ${btn('sel-change', 'sel.change', 'warn', 'f')}
     <span class="spacer"></span><span class="muted small hide-narrow">${esc(T('sel.hint'))}</span>
     <button class="btn xs ghost" data-act="sel-clear" title="Esc">✕</button></div>`;
@@ -1648,6 +1699,17 @@ function authorBox(checked) {
   return `<label class="chk"><input type="checkbox" class="to-author" ${checked || !S.ai.available ? 'checked' : ''} ${S.ai.available ? '' : 'disabled'}> ${esc(T('th.toAuthor'))}</label>`;
 }
 function composerHTML(mode, f) {
+  if (mode === 'edit') {
+    const c = S.composer;
+    const span = c.startLine === c.endLine ? 'L' + c.startLine : `L${c.startLine}–L${c.endLine}`;
+    const rows = Math.max(3, Math.min(20, (c.endLine - c.startLine + 1) + 2));
+    return `<div class="composer is-edit">
+      <div class="cmp-title">${esc(T('cmp.editTitle', f.path, span))}</div>
+      <textarea class="code-editor" rows="${rows}" spellcheck="false"></textarea>
+      <div class="row"><span class="muted small">${esc(T('cmp.editHint'))}</span><span class="spacer"></span>
+        <button class="btn sm" data-act="cmp-cancel">${esc(T('common.cancel'))}</button>
+        <button class="btn sm primary" data-act="cmp-send">${esc(T('cmp.saveEdit'))}</button></div></div>`;
+  }
   const change = mode === 'change';
   return `<div class="composer ${change ? 'is-change' : ''}">
     <div class="cmp-title">${esc(change ? T('cmp.changeTitle') : T('cmp.askTitle', rangeLabel(f, S.sel.a, S.sel.b)))}</div>
@@ -1678,8 +1740,30 @@ function openComposer(mode) {
   S.composer = {mode};
   placeActbar();
 }
+async function openInlineEdit() {
+  if (!S.sel) return;
+  const f = S.byPath[S.sel.path];
+  if (!canEditFile(f)) return;
+  const rng = selectionNewRange(f, S.sel.a, S.sel.b);
+  if (!rng) return;
+  const data = await api('GET', `api/file?path=${encodeURIComponent(f.path)}&side=new`);
+  const all = data.text.replace(/\r\n/g, '\n').split('\n');
+  if (all.length > 1 && all[all.length - 1] === '') all.pop();
+  const slice = all.slice(rng.start - 1, rng.end).join('\n');
+  S.composer = {mode: 'edit', path: f.path, startLine: rng.start, endLine: rng.end, baseHash: data.hash, text: slice};
+  placeActbar();
+}
 async function sendComposer() {
   const box = S.actbar.firstElementChild;
+  if (S.composer.mode === 'edit') {
+    const replacement = box.querySelector('textarea').value;
+    const c = S.composer;
+    const res = await api('POST', 'api/edit', {path: c.path, startLine: c.startLine, endLine: c.endLine, replacement, baseHash: c.baseHash});
+    clearSel();
+    if (res.changed) { await boot(); toast(T('toast.editSaved'), 'ok'); }
+    else toast(T('toast.editNoChange'), 'ok');
+    return;
+  }
   const text = box.querySelector('textarea').value.trim();
   if (S.composer.mode === 'change') {
     if (!text) { toast(T('toast.needChange')); return; }
@@ -1843,11 +1927,43 @@ async function viewFile(path, side, line) {
   openModal(`<div class="vf-head"><b class="mono">${esc(path)}</b><span class="chip">${esc(T(side === 'new' ? 'vf.new' : 'vf.old'))}</span>
       <span class="muted small">${changed.size ? esc(T('vf.changedHint')) : ''}</span>
       ${other ? `<button class="btn xs" data-act="view-side" data-path="${esc(path)}" data-side="${other}">${esc(T(other === 'new' ? 'vf.seeNew' : 'vf.seeOld'))}</button>` : ''}
+      ${side === 'new' && data.editable ? `<button class="btn xs" data-act="edit-from-view" data-path="${esc(path)}" data-line="${line || ''}">${esc(T('vf.edit'))}</button>` : ''}
       <span class="spacer"></span><button class="btn xs" data-act="modal-close">${esc(T('vf.close'))}</button></div>
     <div class="vf-body"><table class="diff vf"><colgroup><col class="c-ln"><col></colgroup>${body}</table></div>`, 'wide');
   const target = line || Math.min.apply(null, changed.size ? Array.from(changed) : [0]);
   const row = target && document.getElementById('vf-' + target);
   if (row) { row.scrollIntoView({block: 'center'}); if (line) flash(row); }
+}
+async function editFile(path, focusLine) {
+  const data = await api('GET', `api/file?path=${encodeURIComponent(path)}&side=new`);
+  S.fileEdit = {path, baseHash: data.hash, original: data.text};
+  openModal(`<div class="vf-head"><b class="mono">${esc(path)}</b><span class="chip c-edit">✏️ ${esc(T('ed.editing'))}</span>
+      <span class="muted small">${esc(T('ed.hint'))}</span>
+      <span class="spacer"></span>
+      <button class="btn xs" data-act="modal-close">${esc(T('common.cancel'))}</button>
+      <button class="btn xs primary" data-act="save-file-edit">${esc(T('cmp.saveEdit'))}</button></div>
+    <textarea id="ed-content" class="code-editor ed-modal-ta" spellcheck="false"></textarea>`, 'wide', true);
+  const ta = $('#ed-content');
+  ta.value = data.text;
+  ta.focus();
+  if (focusLine && focusLine > 1) {
+    const lines = data.text.split('\n');
+    let pos = 0;
+    for (let i = 0; i < Math.min(focusLine - 1, lines.length); i++) pos += lines[i].length + 1;
+    ta.setSelectionRange(pos, pos);
+    const ratio = (focusLine - 1) / Math.max(1, lines.length);
+    ta.scrollTop = Math.max(0, ta.scrollHeight * ratio - ta.clientHeight / 3);
+  }
+}
+async function saveFileEdit() {
+  const ed = S.fileEdit;
+  const ta = $('#ed-content');
+  if (!ed || !ta) return;
+  const res = await api('POST', 'api/edit', {path: ed.path, content: ta.value, baseHash: ed.baseHash});
+  S.fileEdit = null;
+  closeModal();
+  if (res.changed) { await boot(); toast(T('toast.editSaved'), 'ok'); }
+  else toast(T('toast.editNoChange'), 'ok');
 }
 function openSubmit() {
   if ((S.rounds[S.round] || {}).submitted) { toast(T('sub.already', S.round)); return; }
@@ -1867,6 +1983,7 @@ function openSubmit() {
     ${chipsHTML(T('chips.overall'))}
     <div class="sum">
       <div>${T('sub.counts', changes.length, questions.length, bad.length)}</div>
+      ${(S.editedFiles && S.editedFiles.length) ? `<div>${T('sub.editedFiles', S.editedFiles.length)}</div>` : ''}
       <div>${esc(T('sub.okFiles', ok.length, S.files.length))}${unseen.length ? ` · <span class="warn">${esc(T('sub.unseen', unseen.length))}</span>` : ''}</div>
       ${pending ? `<div class="warn">${esc(T('sub.pending'))}</div>` : ''}
     </div>
@@ -1978,6 +2095,7 @@ const ACTIONS = {
   },
   'sel-explain': () => askSelection(T('q.default'), true, false, 'question'),
   'sel-ask': () => openComposer('ask'),
+  'sel-edit': () => openInlineEdit(),
   'sel-change': () => openComposer('change'),
   'sel-annotate': () => annotateRange(S.sel.path, S.sel.a, S.sel.b),
   'sel-clear': () => clearSel(),
@@ -1989,6 +2107,9 @@ const ACTIONS = {
   'ask-file': el => openFileComposer(fileOf(el), 'ask'),
   'view-file': el => viewFile(fileOf(el).path),
   'view-side': el => viewFile(el.dataset.path, el.dataset.side),
+  'edit-file': el => editFile(fileOf(el).path),
+  'edit-from-view': el => editFile(el.dataset.path, +el.dataset.line || 0),
+  'save-file-edit': () => saveFileEdit(),
   'verdict-ok': el => { const f = fileOf(el); return setVerdict(f, (S.verdicts[f.path] || {}).state === 'ok' ? '' : 'ok'); },
   'verdict-bad': el => { const f = fileOf(el); return (S.verdicts[f.path] || {}).state === 'rewrite' ? setVerdict(f, '') : openFileComposer(f, 'rewrite'); },
   'fc-send': el => sendFileComposer(el),
@@ -2062,6 +2183,20 @@ document.addEventListener('keydown', e => {
     if (!e.isComposing && e.keyCode !== 229) { e.preventDefault(); lookupFollowup().catch(err => toast(err.message)); }
     return;
   }
+  if (e.key === 'Tab' && typing && e.target.classList.contains('code-editor')) {
+    e.preventDefault();
+    const ta = e.target, s = ta.selectionStart, end = ta.selectionEnd;
+    const indent = ta.value.includes('\t') ? '\t' : '    ';
+    ta.value = ta.value.slice(0, s) + indent + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = s + indent.length;
+    return;
+  }
+  if ((e.key === 's' || e.key === 'S') && (e.metaKey || e.ctrlKey) && typing && e.target.classList.contains('code-editor')) {
+    const box = e.target.closest('.composer, .modal');
+    const btn = box && box.querySelector('.btn.primary');
+    if (btn) { e.preventDefault(); btn.click(); }
+    return;
+  }
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && typing) {
     const box = e.target.closest('.composer, .th-compose, .ask-global, .modal');
     const btn = box && box.querySelector('.btn.primary');
@@ -2083,6 +2218,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === '?') run(showHelp);
   else if (S.sel && e.key === 'e' && S.ai.available) run(() => askSelection(T('q.default'), true, false, 'question'));
   else if (S.sel && e.key === 'q') run(() => openComposer('ask'));
+  else if (S.sel && e.key === 'i') run(openInlineEdit);
   else if (S.sel && e.key === 'f') run(() => openComposer('change'));
   else if (S.sel && e.key === 'a' && S.ai.available) run(() => annotateRange(S.sel.path, S.sel.a, S.sel.b));
 });

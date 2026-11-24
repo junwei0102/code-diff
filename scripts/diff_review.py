@@ -18,6 +18,7 @@ if sys.version_info < (3, 7):
     sys.exit("diff-review needs Python >= 3.7 (on Alliance clusters: module load python)")
 
 import argparse
+import difflib
 import fnmatch
 import getpass
 import hashlib
@@ -535,6 +536,7 @@ class Repo:
     def describe(self):
         d = {"name": self.name, "root": self.root, "host": socket.gethostname(), "patch": self.patch,
              "isGit": bool(self.git_dir), "base": self.base or "HEAD", "range": self.range,
+             "editable": not bool(self.patch) and not self.range,
              "emptyBase": self.base_ref == EMPTY_TREE, "branch": None, "baseSha": None}
         if self.git_dir and not self.patch:
             d["branch"] = git(["symbolic-ref", "--short", "-q", "HEAD"], self.root, check=False).strip() or "detached HEAD"
@@ -671,7 +673,7 @@ class Store:
         except (OSError, ValueError):
             data = {}
         defaults = {"version": 0, "round": 1, "rounds": {}, "threads": {}, "annotations": {},
-                    "verdicts": {}, "deleted": {}, "next": {},
+                    "verdicts": {}, "edits": {}, "deleted": {}, "next": {},
                     "settings": {"model": "", "lang": "zh", "effort": ""}}
         for key, value in defaults.items():
             data.setdefault(key, value)
@@ -1570,7 +1572,7 @@ class App:
         with self.store.lock:
             return {"serverId": self.server_id, "repo": self.repo.describe(), "files": self.files,
                     "skipped": self.skipped, "notes": self.notes, "diffVersion": self.diff_version,
-                    "stats": self.stats(), "ai": self.explainer.describe(), "features": ["lookup"],
+                    "stats": self.stats(), "ai": self.explainer.describe(), "features": ["lookup", "edit"],
                     "listen": {"mode": self.listen.get("mode"), "host": self.listen.get("host")},
                     "state": self.state_since(0)}
 
@@ -1582,41 +1584,155 @@ class App:
             def changed(items):
                 return {k: v for k, v in items.items() if full or v.get("v", 0) > since}
 
+            round_edits = (st.get("edits") or {}).get(str(st["round"])) or {}
             return {"serverId": self.server_id, "version": st["version"], "diffVersion": self.diff_version,
                     "round": st["round"], "rounds": st["rounds"], "verdicts": st["verdicts"],
+                    "editedFiles": sorted(round_edits.keys()),
                     "settings": st["settings"], "threads": changed(st["threads"]),
                     "annotations": changed(st["annotations"]), "jobs": self.explainer.active, "full": full,
                     "deleted": [k for k, v in st["deleted"].items() if full or v > since]}
 
+    def _safe_worktree_path(self, path):
+        full = os.path.realpath(os.path.join(self.repo.root, path))
+        root_real = os.path.realpath(self.repo.root)
+        if not full.startswith(root_real + os.sep):
+            raise ApiError(403, "path is outside the repository")
+        return full
+
     def file_content(self, path, side):
         f = self.by_path.get(path)
-        if f is None:
+        round_edits = (self.store.data.get("edits") or {}).get(str(self.store.data["round"])) or {}
+        if f is None and not (side == "new" and path in round_edits):
             raise ApiError(404, "file not in the diff")
         repo = self.repo
+        editable = False
         try:
             if side == "old":
-                if not repo.git_dir or repo.patch or f["status"] == "A" or repo.base_ref == EMPTY_TREE:
+                if not repo.git_dir or repo.patch or (f and f["status"] == "A") or repo.base_ref == EMPTY_TREE:
                     raise ApiError(404, self.tr("这个文件没有旧版本", "this file has no older version"))
                 left = repo.base_ref.split("..")[0] or "HEAD"
                 if "..." in repo.base_ref:
                     left = git(["merge-base", left, repo.base_ref.split("...")[1] or "HEAD"], repo.root).strip()
-                text = git(["show", "%s:%s" % (left, f["oldPath"] or f["path"])], repo.root)
+                text = git(["show", "%s:%s" % (left, (f["oldPath"] or f["path"]) if f else path)], repo.root)
             else:
-                if f["status"] == "D":
+                if f and f["status"] == "D":
                     raise ApiError(404, self.tr("这个文件被删除了", "this file was deleted"))
                 if repo.range:
                     right = repo.base_ref.split("..")[-1].lstrip(".") or "HEAD"
                     text = git(["show", "%s:%s" % (right, f["path"])], repo.root)
                 else:
-                    full = os.path.realpath(os.path.join(repo.root, f["path"]))
-                    if not full.startswith(os.path.realpath(repo.root) + os.sep):
-                        raise ApiError(403, "path is outside the repository")
+                    full = self._safe_worktree_path(path)
                     if os.path.getsize(full) > 4 * MAX_TEXT_BYTES:
                         raise ApiError(413, self.tr("文件太大", "file too large"))
                     text = read_text(full)
+                    raw_path = os.path.join(repo.root, path)
+                    editable = (not repo.patch and not repo.range and not os.path.islink(raw_path)
+                                and (f is None or (not f["binary"] and "symlink" not in (f.get("meta") or []))))
         except (RuntimeError, OSError) as e:
             raise ApiError(404, str(e))
-        return {"path": path, "side": side, "text": text}
+        return {"path": path, "side": side, "text": text,
+                "hash": hashlib.sha1(text.encode("utf-8")).hexdigest()[:16], "editable": editable}
+
+    def edit_file(self, body):
+        """Save a reviewer's direct edit (whole file or line range) to the working tree and refresh the diff."""
+        if self.repo.patch or self.repo.range:
+            raise ApiError(400, self.tr("只有工作区 diff 才能直接编辑（历史 commit 范围和 patch 文件只读）",
+                                        "Direct editing is only available for working-tree diffs"))
+        path = str(body.get("path") or "").strip()
+        with self.store.lock:
+            st = self.store.data
+            rnd_key = str(st["round"])
+            round_edits = st.setdefault("edits", {}).setdefault(rnd_key, {})
+            f = self.by_path.get(path)
+            if not path or (f is None and path not in round_edits):
+                raise ApiError(404, self.tr("这个文件不在当前 diff 里", "file not in the diff"))
+            if f and (f["status"] == "D" or f["binary"] or "symlink" in (f.get("meta") or [])):
+                raise ApiError(400, self.tr("这个文件不能在网页里编辑", "this file cannot be edited in the UI"))
+            raw_path = os.path.join(self.repo.root, path)
+            if os.path.islink(raw_path):
+                raise ApiError(400, self.tr("不支持直接编辑符号链接", "cannot edit a symlink"))
+            full = self._safe_worktree_path(path)
+            if not os.path.isfile(full):
+                raise ApiError(404, self.tr("磁盘上找不到这个文件", "file not found on disk"))
+            if os.path.getsize(full) > 4 * MAX_TEXT_BYTES:
+                raise ApiError(413, self.tr("文件太大，请在编辑器里修改", "file too large to edit in the browser"))
+            try:
+                with open(full, "rb") as fh:
+                    raw = fh.read()
+            except OSError as e:
+                raise ApiError(500, str(e))
+            if b"\0" in raw[:8192]:
+                raise ApiError(400, self.tr("二进制文件不能在网页里编辑", "cannot edit a binary file"))
+            current_text = raw.decode("utf-8", "replace")
+            cur_hash = hashlib.sha1(current_text.encode("utf-8")).hexdigest()[:16]
+            base_hash = str(body.get("baseHash") or "").strip()
+            if base_hash and base_hash != cur_hash:
+                raise ApiError(409, self.tr("文件在别处被改过了，请关闭后重新打开编辑，避免覆盖外部改动。",
+                                            "File changed on disk since you opened it; reopen to avoid overwriting."))
+            eol = "\r\n" if "\r\n" in current_text else "\n"
+            if "startLine" in body and "endLine" in body and "replacement" in body:
+                try:
+                    start = int(body["startLine"])
+                    end = int(body["endLine"])
+                except (TypeError, ValueError):
+                    raise ApiError(400, "bad line range")
+                lines = current_text.splitlines(keepends=True)
+                if lines:
+                    if start < 1 or end < start or end > len(lines):
+                        raise ApiError(400, self.tr("行号超出文件范围（共 %d 行）", "line range out of bounds (%d lines)") % len(lines))
+                elif not (start == 1 and end == 0):
+                    raise ApiError(400, "empty file line range")
+                rep = str(body["replacement"]).replace("\r\n", "\n")
+                if eol == "\r\n":
+                    rep = rep.replace("\n", "\r\n")
+                if rep == "":
+                    rep_chunk = ""
+                else:
+                    had_eol = bool(lines and end >= 1 and lines[end - 1].endswith(("\n", "\r")))
+                    need_eol = had_eol or (end < len(lines))
+                    rep_chunk = rep if (not need_eol or rep.endswith(("\n", "\r"))) else (rep + eol)
+                new_text = "".join(lines[:start - 1]) + rep_chunk + "".join(lines[end:])
+            elif "content" in body:
+                new_text = str(body["content"])
+                if eol == "\r\n" and "\r\n" not in new_text:
+                    new_text = new_text.replace("\n", "\r\n")
+            else:
+                raise ApiError(400, "expected content or startLine/endLine/replacement")
+            if new_text == current_text:
+                return {"ok": True, "changed": False, "diffVersion": self.diff_version,
+                        "hash": cur_hash, "editedFiles": sorted(round_edits.keys())}
+            mode = stat.S_IMODE(os.stat(full).st_mode)
+            tmp = "%s.%d.%s.tmp" % (full, os.getpid(), secrets.token_hex(4))
+            try:
+                with open(tmp, "wb") as fh:
+                    fh.write(new_text.encode("utf-8"))
+                os.chmod(tmp, mode)
+                os.replace(tmp, full)
+            except OSError as e:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise ApiError(500, self.tr("写入文件失败：%s", "failed to write file: %s") % e)
+            entry = round_edits.get(path)
+            if entry is None:
+                round_edits[path] = {"before": current_text, "after": new_text, "count": 1, "at": now()}
+            else:
+                entry["after"] = new_text
+                entry["count"] = entry.get("count", 1) + 1
+                entry["at"] = now()
+                if entry["after"] == entry["before"]:
+                    del round_edits[path]
+            self.files, self.skipped = self.repo.load()
+            self.by_path = {x["path"]: x for x in self.files}
+            verdict = st["verdicts"].get(path)
+            if verdict and verdict.get("state") == "rewrite":
+                del st["verdicts"][path]
+            self.diff_version = self.store.bump()
+            self.store.save(force=True)
+            new_hash = hashlib.sha1(new_text.encode("utf-8")).hexdigest()[:16]
+            return {"ok": True, "changed": True, "diffVersion": self.diff_version,
+                    "hash": new_hash, "editedFiles": sorted(round_edits.keys())}
 
     def review_text(self, rnd):
         path = os.path.join(self.reviews_dir, "round-%d.md" % rnd)
@@ -1883,6 +1999,9 @@ class App:
         lines.append("Changed files (%d): %s%s" % (len(self.files), "; ".join(listing), " ..." if len(self.files) > 80 else ""))
         if self.notes["summary"]:
             lines += ["", "## Author's notes (from the agent that wrote this change)", self.notes["summary"]]
+        round_edits = (self.store.data.get("edits") or {}).get(str(self.store.data["round"])) or {}
+        if round_edits:
+            lines.append("Reviewer's direct edits in this round (already on disk): " + ", ".join(sorted(round_edits)))
         return "\n".join(lines)
 
     def whole_diff(self, budget=WHOLE_DIFF_BUDGET):
@@ -2062,19 +2181,41 @@ class App:
                 lk = t["lookup"]
                 md.append("- %s · %s%s" % (code_span(one_line(lk["text"], 100)), thread_where(t),
                                             " (a word in an explanation)" if lk["source"] == "text" else ""))
+        reviewer_edits = []
+        round_edits = (st.get("edits") or {}).get(str(rnd)) or {}
+        for path in sorted(round_edits):
+            entry = round_edits[path]
+            before, after = entry.get("before", ""), entry.get("after", "")
+            if before == after:
+                continue
+            udiff = list(difflib.unified_diff(
+                before.splitlines(), after.splitlines(),
+                fromfile="a/" + path, tofile="b/" + path, lineterm="", n=3))
+            if udiff:
+                reviewer_edits.append({"path": path, "diff": "\n".join(udiff), "lines": udiff})
+        if reviewer_edits:
+            md += ["", "## Reviewer's direct edits — already saved to disk (%d)" % len(reviewer_edits),
+                   "The reviewer edited these files directly in the diff-review UI during this round. "
+                   "Their changes are already on disk: keep them intact and do not overwrite or revert them. "
+                   "If further edits are requested below, build on top of what is on disk now."]
+            for item in reviewer_edits:
+                dlines = item["lines"]
+                shown = dlines[:200] + (["... (%d more diff lines)" % (len(dlines) - 200)] if len(dlines) > 200 else [])
+                md += ["", "### `%s`" % item["path"], "```diff"] + shown + ["```"]
         if ok or unreviewed:
             md.append("")
         if ok:
             md.append("- understood / OK: " + ", ".join("`%s`" % p for p in ok))
         if unreviewed:
             md.append("- not reviewed: " + ", ".join("`%s`" % p for p in unreviewed))
-        md += ["", "## How to respond"] + self.respond_hint(verdict)
+        md += ["", "## How to respond"] + self.respond_hint(verdict, has_edits=bool(reviewer_edits))
         data = {"round": rnd, "verdict": verdict, "comment": comment, "repo": repo.root, "base": repo.base or "HEAD",
                 "changeRequests": [self.thread_brief(t) for t in changes],
                 "questions": [self.thread_brief(t) for t in questions],
                 "puzzled": [self.thread_brief(t) for t in puzzled],
                 "lookups": [{"id": t["id"], "text": t["lookup"]["text"], "source": t["lookup"]["source"],
                              "where": thread_where(t)} for t in looked_up],
+                "reviewerEdits": [{"path": e["path"], "diff": e["diff"]} for e in reviewer_edits],
                 "files": {"rewrite": rewrite, "ok": ok, "notReviewed": unreviewed}}
         return "\n".join(md) + "\n", data
 
@@ -2102,11 +2243,14 @@ class App:
                 "lines": (t.get("anchor") or {}).get("lines") or [],
                 "messages": [{"role": m["role"], "text": m["text"]} for m in t["messages"] if m["text"].strip()]}
 
-    def respond_hint(self, verdict):
+    def respond_hint(self, verdict, has_edits=False):
         repo = self.repo
         target = " --repo %s" % shlex.quote(repo.root) + (" --patch %s" % shlex.quote(repo.patch) if repo.patch else "")
         cmd = "python3 %s" % shlex.quote(SCRIPT)
         if verdict == "approve":
+            if has_edits:
+                return ["Approved (note: the reviewer directly edited files on disk above — keep those edits intact). "
+                        "Optionally stop the UI: `%s stop%s`" % (cmd, target)]
             return ["Approved: nothing left to change. Optionally stop the UI: `%s stop%s`" % (cmd, target)]
         first = ("1. Address every change request and every file marked “needs rewrite”. The reviewer will not "
                  "accept code they can't follow, so aim for code that reads clearly (direct control flow, fewer "
@@ -2147,6 +2291,7 @@ ROUTES = {
     ("POST", "/api/annotate"): lambda app, body, q: app.annotate(body),
     ("POST", "/api/annotation"): lambda app, body, q: app.update_annotation(body),
     ("POST", "/api/verdict"): lambda app, body, q: app.set_verdict(body),
+    ("POST", "/api/edit"): lambda app, body, q: app.edit_file(body),
     ("POST", "/api/settings"): lambda app, body, q: app.set_settings(body),
     ("POST", "/api/submit"): lambda app, body, q: app.submit(body),
     ("POST", "/api/refresh"): lambda app, body, q: app.refresh(body.get("notes"), body.get("replies"),
