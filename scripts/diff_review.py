@@ -1682,6 +1682,12 @@ class App:
                         raise ApiError(400, self.tr("行号超出文件范围（共 %d 行）", "line range out of bounds (%d lines)") % len(lines))
                 elif not (start == 1 and end == 0):
                     raise ApiError(400, "empty file line range")
+                if "expectedLine" in body and body["expectedLine"] is not None:
+                    expected = str(body["expectedLine"]).replace("\r\n", "\n").split("\n")
+                    actual = [ln.rstrip("\r\n") for ln in lines[start - 1:end]]
+                    if actual != expected:
+                        raise ApiError(409, self.tr("这一行在磁盘上已变动，请刷新后再编辑。",
+                                                    "This line changed on disk; refresh before editing."))
                 rep = str(body["replacement"]).replace("\r\n", "\n")
                 if eol == "\r\n":
                     rep = rep.replace("\n", "\r\n")
