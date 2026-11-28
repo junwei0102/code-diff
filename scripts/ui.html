@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="dr-token" content="__DR_TOKEN__">
 <title>Diff Review</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
 <style>
 :root {
   --bg: #ffffff; --bg-2: #f6f8fa; --bg-3: #eef1f4; --fg: #1f2328; --fg-2: #59636e; --fg-3: #818b98;
@@ -231,6 +232,65 @@ tr.r.editing td.code { padding: 2px 10px 4px 10px; background: var(--bg) !import
 .ied-bar { display: flex; align-items: center; gap: 6px; padding-top: 2px; border-top: 1px dashed var(--border-2); font: 11.5px var(--sans); color: var(--fg-2); flex-wrap: wrap; }
 .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
 
+/* LaTeX prose view */
+.btn.tex-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+section.file.tex-prose table.diff { font: 14px/1.75 var(--sans); }
+section.file.tex-prose td.ln { font: 11.5px/2.05 var(--mono); }
+section.file.tex-prose td.code { padding: 2px 14px 2px 6px; }
+section.file.tex-prose tr.del .src { text-decoration: line-through; opacity: .82; }
+.tex-sec { font-weight: 700; color: var(--fg); }
+.tex-sec-0 { font-size: 1.32em; }
+.tex-sec-1 { font-size: 1.2em; }
+.tex-sec-2 { font-size: 1.1em; }
+.tex-sec-3 { font-size: 1.03em; }
+.tex-sec-4 { font-weight: 650; font-style: italic; }
+.tex-tag { display: inline-block; padding: 0 6px; border-radius: 999px; font: 11.5px/1.55 var(--sans); vertical-align: 1px; margin: 0 2px; }
+.tex-cite { background: var(--accent-soft); color: var(--accent); }
+.tex-ref { background: var(--ai-soft); color: var(--ai); }
+.tex-lbl { background: var(--bg-3); color: var(--fg-2); font-family: var(--mono); font-size: 11px; }
+.tex-math { font-family: "Times New Roman", "STIX Two Math", Georgia, serif; font-style: italic; padding: 0 2px; }
+.tex-math .katex { font-style: normal; font-size: 1.02em; }
+.tex-com { color: var(--fg-3); font-style: italic; font-size: 12.5px; }
+.tex-cmd { font: 11.5px var(--mono); color: var(--fg-3); background: var(--bg-2); padding: 0 5px; border-radius: 4px; }
+.tex-env { font: 11.5px var(--mono); color: var(--fg-3); }
+.tex-bullet { color: var(--accent); font-weight: 700; margin-right: 4px; }
+.tex-cap { font-weight: 600; color: var(--fg-2); margin-right: 4px; }
+.tex-code { font: 12.5px var(--mono); background: var(--bg-3); padding: 0 4px; border-radius: 3px; }
+
+/* Overleaf-style split-pane PDF preview */
+body.pdf-open #layout { grid-template-columns: 220px minmax(0, 1fr) 6px var(--pdf-w, 45vw); }
+body.pdf-dragging { user-select: none; cursor: col-resize; }
+body.pdf-dragging #pdf-frame { pointer-events: none; }
+#pdf-splitter { display: none; cursor: col-resize; background: var(--border-2); position: sticky; top: var(--head-h); height: calc(100vh - var(--head-h)); z-index: 15; transition: background .15s; }
+body.pdf-open #pdf-splitter { display: block; }
+#pdf-splitter:hover, body.pdf-dragging #pdf-splitter { background: var(--accent); }
+#pdf-pane { display: none; position: sticky; top: var(--head-h); height: calc(100vh - var(--head-h)); flex-direction: column; border-left: 1px solid var(--border); background: var(--bg-2); min-width: 0; }
+body.pdf-open #pdf-pane { display: flex; }
+.pdf-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); flex-wrap: wrap; font-size: 12.5px; }
+.pdf-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg); }
+.pdf-seg button { border: 0; background: transparent; padding: 2px 9px; font-size: 12px; cursor: pointer; color: var(--fg-2); }
+.pdf-seg button:hover:not(:disabled) { background: var(--bg-3); color: var(--fg); }
+.pdf-seg button.on { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.pdf-seg button:disabled { opacity: .45; cursor: not-allowed; }
+.pdf-main-sel { max-width: 170px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); font: 12px var(--mono); }
+.pdf-status { font-size: 12px; color: var(--fg-2); display: inline-flex; align-items: center; gap: 4px; }
+.pdf-status.is-ok { color: var(--ok); }
+.pdf-status.is-err { color: var(--bad); }
+.pdf-status.is-warn { color: var(--warn); }
+.pdf-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; background: var(--bg-3); }
+#pdf-frame { flex: 1; width: 100%; height: 100%; border: 0; background: #525659; }
+.pdf-empty { padding: 28px 20px; color: var(--fg-2); font-size: 13px; overflow: auto; }
+.pdf-err { margin-top: 10px; padding: 10px 12px; border-radius: 6px; background: var(--bad-soft); border: 1px solid var(--bad); color: var(--fg); font: 12px/1.5 var(--mono); white-space: pre-wrap; max-height: 45vh; overflow: auto; }
+.pdf-notice { padding: 5px 10px; font-size: 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.pdf-notice.warn { background: var(--warn-soft); color: var(--warn); }
+.pdf-notice.err { background: var(--bad-soft); color: var(--bad); }
+.pdf-log { max-height: 68vh; overflow: auto; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: 12px/1.5 var(--mono); white-space: pre-wrap; }
+.pdf-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--fg-3); }
+.pdf-dot.ok { background: var(--ok); }
+.pdf-dot.err { background: var(--bad); }
+.pdf-dot.compiling { background: var(--accent); animation: pdfpulse 1s infinite; }
+@keyframes pdfpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
 /* threads */
 .thread { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); max-width: 940px; overflow: hidden; }
 .thread.k-change { border-left: 3px solid var(--warn); }
@@ -357,7 +417,10 @@ table.vf td.ln { cursor: default; }
   col.c-ln { width: 38px; }
   table.diff { font-size: 12px; }
   tr.thread-row > td, tr.anno-row > td, tr.anno-head > td, tr.actbar > td { padding-left: 8px; padding-right: 8px; }
-  .file-head .btn .lbl, #btn-overview .lbl { display: none; }
+  .file-head .btn .lbl, #btn-overview .lbl, #btn-pdf .lbl { display: none; }
+  body.pdf-open #layout { grid-template-columns: minmax(0, 1fr); }
+  body.pdf-open #pdf-splitter { display: none; }
+  body.pdf-open #pdf-pane { position: fixed; inset: var(--head-h) 0 0 0; height: auto; z-index: 38; border-left: 0; }
 }
 @media (max-width: 480px) {  /* phones: make room in the header for the repo name and round */
   .hide-phone { display: none !important; }
@@ -374,6 +437,7 @@ table.vf td.ln { cursor: default; }
   <div class="brand hide-phone"><span class="logo">◧</span><span class="hide-narrow">Diff Review</span></div>
   <div class="meta" id="meta"></div>
   <div class="spacer"></div>
+  <button class="btn" data-act="toggle-pdf" id="btn-pdf" hidden data-i18n-title="pdf.toggleTip"><span class="pdf-dot" id="pdf-dot"></span>📄<span class="lbl" data-i18n="pdf.toggle"></span></button>
   <button class="btn" data-act="overview" id="btn-overview" data-i18n-title="hdr.overviewTip">📖<span class="lbl" data-i18n="hdr.overview"></span></button>
   <button class="btn icon" data-act="help" data-i18n-title="hdr.helpTip">?</button>
   <button class="btn icon" data-act="settings" data-i18n-title="hdr.settingsTip">⚙</button>
@@ -392,10 +456,13 @@ table.vf td.ln { cursor: default; }
     <section id="intro"></section>
     <section id="files"><div class="loading"><span class="spin"></span> <span data-i18n="loading"></span></div></section>
   </main>
+  <div id="pdf-splitter"></div>
+  <aside id="pdf-pane"><div class="pdf-head" id="pdf-head"></div><div class="pdf-body" id="pdf-body"></div></aside>
 </div>
 <div id="modal" hidden></div>
 <div id="toasts"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async crossorigin="anonymous" referrerpolicy="no-referrer" onload="window.dispatchEvent(new Event('hljs-ready'))"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" async crossorigin="anonymous" referrerpolicy="no-referrer" onload="window.dispatchEvent(new Event('katex-ready'))"></script>
 <script>
 'use strict';
 const TOKEN = document.querySelector('meta[name="dr-token"]').content;
@@ -493,6 +560,29 @@ const I18N = {
     'file.okTip': '看懂了，没问题（会折叠起来）',
     'file.bad': ' 需重写',
     'file.badTip': '这个文件需要重写',
+    'tex.prose': ' 正文',
+    'tex.source': ' 源码',
+    'tex.proseTip': '切换 LaTeX 可读正文视图 / 原始源码（正文视图里点击句子同样可直接编辑）',
+    'pdf.toggle': ' PDF 预览',
+    'pdf.toggleTip': '打开 / 收起 Overleaf 式右侧 PDF 预览分栏',
+    'pdf.current': '当前版',
+    'pdf.diff': '红蓝对照',
+    'pdf.diffTip': '用 latexdiff 生成改前/改后红蓝标注 PDF',
+    'pdf.diffNoTool': '当前环境不可用 latexdiff（需要 git 仓库且安装 latexdiff）',
+    'pdf.recompile': '重编',
+    'pdf.log': '日志',
+    'pdf.logTitle': m => `LaTeX 编译日志 · ${m}`,
+    'pdf.openTab': '新标签打开',
+    'pdf.close': '收起 PDF 预览',
+    'pdf.compiling': '编译中…',
+    'pdf.ok': s => `已编译 (${s}s)`,
+    'pdf.okWarn': s => `已编译（有警告，${s}s）`,
+    'pdf.error': '编译失败',
+    'pdf.idle': '未编译',
+    'pdf.noCompiler': '当前机器未检测到 latexmk / pdflatex / xelatex，无法在后台编译 PDF。左侧「📖 正文」视图仍可离线直接阅读和编辑。',
+    'pdf.noMain': '仓库中没有找到包含 \\documentclass 的主 .tex 文件。',
+    'pdf.showingPrev': '本次编译失败，下面仍是上次成功的 PDF：',
+    'pdf.mainTip': '选择主 .tex 文件',
     'row.noeol': '文件末尾没有换行',
     'row.binary': '二进制文件，不显示内容',
     'row.noText': '没有文本改动（空文件，或者只改了权限/重命名）',
@@ -746,6 +836,29 @@ const I18N = {
     'file.okTip': 'Understood, looks fine (folds the file)',
     'file.bad': ' Needs rewrite',
     'file.badTip': 'This file needs a rewrite',
+    'tex.prose': ' Prose',
+    'tex.source': ' Source',
+    'tex.proseTip': 'Toggle readable LaTeX prose view / raw source (click any line to edit in place)',
+    'pdf.toggle': ' PDF',
+    'pdf.toggleTip': 'Toggle Overleaf-style split-pane PDF preview',
+    'pdf.current': 'Current',
+    'pdf.diff': 'latexdiff',
+    'pdf.diffTip': 'Render red/blue latexdiff PDF against base revision',
+    'pdf.diffNoTool': 'latexdiff unavailable (requires a git repo and latexdiff installed)',
+    'pdf.recompile': 'Recompile',
+    'pdf.log': 'Log',
+    'pdf.logTitle': m => `LaTeX compile log · ${m}`,
+    'pdf.openTab': 'Open in new tab',
+    'pdf.close': 'Close PDF preview',
+    'pdf.compiling': 'Compiling…',
+    'pdf.ok': s => `Compiled (${s}s)`,
+    'pdf.okWarn': s => `Compiled with warnings (${s}s)`,
+    'pdf.error': 'Compile failed',
+    'pdf.idle': 'Idle',
+    'pdf.noCompiler': 'No latexmk / pdflatex / xelatex found on this machine. Readable Prose view on the left still works offline.',
+    'pdf.noMain': 'No main .tex file containing \\documentclass was found in this repository.',
+    'pdf.showingPrev': 'Latest compile failed; still showing previous PDF:',
+    'pdf.mainTip': 'Select main .tex file',
     'row.noeol': 'No newline at end of file',
     'row.binary': 'Binary file, not shown',
     'row.noText': 'No text changes (empty file, or only the mode / name changed)',
@@ -955,9 +1068,10 @@ async function syncLang() {
 
 const S = {
   serverId: null, diffVersion: null, version: 0, round: 1, rounds: {}, settings: {}, jobs: 0,
-  repo: {}, ai: {available: false}, listen: {}, stats: {}, files: [], byPath: {}, notes: {summary: '', files: {}}, skipped: [],
+  repo: {}, ai: {available: false}, latex: null, listen: {}, stats: {}, files: [], byPath: {}, notes: {summary: '', files: {}}, skipped: [],
   threads: {}, annos: {}, verdicts: {}, threadEls: {}, sel: null, composer: null, actbar: null, directEdit: null,
-  collapsed: {}, hideAnno: {}, link: 'ok', booted: false, newRoundBanner: null, draftComment: '',
+  collapsed: {}, hideAnno: {}, texProse: {}, pdfOpen: false, pdfLoadedKey: '', pdfHeadHtml: '',
+  link: 'ok', booted: false, newRoundBanner: null, draftComment: '',
   features: [], lookup: null, lookupPick: null,
 };
 const GENERATED = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|Pipfile\.lock)$|\.min\.(js|css)$|\.map$/;
@@ -991,9 +1105,11 @@ async function api(method, url, body) {
 }
 
 async function boot() {
+  const firstBoot = !S.booted;
   const y = S.booted ? window.scrollY : 0;
   const data = await api('GET', 'api/bootstrap');
   Object.assign(S, {serverId: data.serverId, diffVersion: data.diffVersion, repo: data.repo, ai: data.ai,
+                    latex: data.latex || null,
                     listen: data.listen, stats: data.stats, files: data.files, skipped: data.skipped, notes: data.notes,
                     features: data.features || []});
   closeLookup(true);
@@ -1008,6 +1124,7 @@ async function boot() {
     sessionStorage.setItem(key, String(S.round));
   } catch (e) { /* storage blocked */ }
   renderAll();
+  syncLatex(S.latex, firstBoot);
   S.booted = true;
   if (y) window.scrollTo(0, y);
   syncLang();
@@ -1015,9 +1132,10 @@ async function boot() {
 function rerender() {  // everything again, e.g. after switching the language
   const y = window.scrollY;
   for (const f of S.files) { f.rowEls = null; f.painted = false; }
-  Object.assign(S, {threadEls: {}, sel: null, composer: null, actbar: null, directEdit: null});
+  Object.assign(S, {threadEls: {}, sel: null, composer: null, actbar: null, directEdit: null, pdfHeadHtml: ''});
   hideLookupBtn();
   renderAll();
+  renderPdfPane();
   window.scrollTo(0, y);
   renderLookup();
 }
@@ -1026,8 +1144,10 @@ function applyState(st, initial) {
   Object.assign(S, {version: st.version, round: st.round, rounds: st.rounds || {}, settings: st.settings || {}, jobs: st.jobs || 0});
   const verdictsChanged = JSON.stringify(st.verdicts || {}) !== JSON.stringify(S.verdicts);
   const editsChanged = JSON.stringify(st.editedFiles || []) !== JSON.stringify(S.editedFiles || []);
+  const latexChanged = st.latex && JSON.stringify(st.latex) !== JSON.stringify(S.latex);
   S.verdicts = st.verdicts || {};
   S.editedFiles = st.editedFiles || [];
+  if (st.latex) S.latex = st.latex;
   const touched = new Set();
   for (const id of st.deleted || []) {
     // A lookup that only lived in its popover was never on the page: re-placing the file's threads
@@ -1051,6 +1171,7 @@ function applyState(st, initial) {
   touched.forEach(placeExtras);
   if (S.lookup) renderLookup();
   if (verdictsChanged || editsChanged) S.files.forEach(f => refreshFileHead(f));
+  if (latexChanged) syncLatex(S.latex, false);
   renderSidebar();
   renderHeader();
   renderBanners();
@@ -1062,9 +1183,10 @@ async function poll() {
     const st = await api('GET', 'api/state?since=' + S.version);
     setLink('ok');
     if (st.serverId !== S.serverId) { location.reload(); return; }  // this review's server was restarted
+    const lxChanged = st.latex && JSON.stringify(st.latex) !== JSON.stringify(S.latex);
     if (st.diffVersion !== S.diffVersion) { if (!S.directEdit) await boot(); }
-    else if (st.version !== S.version || st.jobs !== S.jobs) applyState(st, false);
-    if (st.jobs > 0) delay = 700;
+    else if (st.version !== S.version || st.jobs !== S.jobs || lxChanged) applyState(st, false);
+    if (st.jobs > 0 || (st.latex && st.latex.status === 'compiling')) delay = 700;
   } catch (e) {
     setLink(e.gone ? 'gone' : 'lost');
     delay = 3000;
@@ -1111,6 +1233,12 @@ function selectionNewRange(f, a, b) {
 }
 function isEditedFile(path) {
   return Array.isArray(S.editedFiles) && S.editedFiles.includes(path);
+}
+function isTexFile(f) {
+  return !!(f && /\.tex$/i.test(f.path));
+}
+function texProseOn(path) {
+  return path in S.texProse ? S.texProse[path] : true;
 }
 function needsAuthor(t) {
   if (t.resolved || !(t.kind === 'change' || t.askAuthor)) return false;
@@ -1292,6 +1420,7 @@ function fileSection(f) {
   sec.dataset.path = f.path;
   const folded = f.path in S.collapsed ? S.collapsed[f.path] : ((S.verdicts[f.path] || {}).state === 'ok' || f.big);
   sec.classList.toggle('folded', folded);
+  sec.classList.toggle('tex-prose', isTexFile(f) && texProseOn(f.path));
   const note = S.notes.files[f.path];
   const big = GENERATED.test(f.path) ? T('file.bigGenerated', f.rows.length) : T('file.bigLarge', f.rows.length);
   sec.innerHTML = `<div class="file-head"></div><div class="file-body">
@@ -1308,6 +1437,7 @@ function fileHeadHTML(f) {
   const name = f.oldPath && f.oldPath !== f.path ? `${esc(f.oldPath)} → ${esc(f.path)}` : esc(f.path);
   const tip = key => `title="${esc(T(key))}"`;
   const lbl = key => `<span class="lbl">${esc(T(key))}</span>`;
+  const prose = isTexFile(f) && texProseOn(f.path);
   return `<button class="fold" data-act="fold" ${tip('file.foldTip')}>▾</button>
     <span class="st st-${f.untracked ? 'U' : f.status}">${f.untracked ? 'U' : f.status}</span>
     <span class="path mono" data-act="fold">${name}</span>
@@ -1315,6 +1445,7 @@ function fileHeadHTML(f) {
     ${isEditedFile(f.path) ? `<span class="chip tiny c-edit">✏️ ${esc(T('file.edited'))}</span>` : ''}
     <span class="cnt"><span class="add">+${f.additions}</span> <span class="del">−${f.deletions}</span></span>
     <span class="spacer"></span>
+    ${isTexFile(f) ? `<button class="btn sm ghost ${prose ? 'tex-on' : ''}" data-act="toggle-tex-prose" ${tip('tex.proseTip')}>${prose ? '📖' : '&lt;/&gt;'}${lbl(prose ? 'tex.prose' : 'tex.source')}</button>` : ''}
     ${f.rows.length && S.ai.available ? `<button class="btn sm ghost" data-act="annotate-file" ${tip('file.annotateTip')}>📖${lbl('file.annotate')}</button>` : ''}
     <button class="btn sm ghost" data-act="ask-file" ${tip('file.askTip')}>❓${lbl('file.ask')}</button>
     ${S.repo.patch ? '' : `<button class="btn sm ghost" data-act="view-file" ${tip('file.viewTip')}>🗎${lbl('file.view')}</button>`}
@@ -1329,9 +1460,10 @@ function refreshFileHead(f, sec = fileSec(f.path)) {
   sec.classList.toggle('v-ok', v === 'ok');
   sec.classList.toggle('v-bad', v === 'rewrite');
 }
-function codeCell(r) {
+function codeCell(r, f) {
   const cr = r.s.endsWith('\r') ? '<span class="cr" title="CRLF">␍</span>' : '';
-  return `<span class="mk">${r.t === ' ' ? '' : r.t}</span><span class="src">${esc(stripCR(r.s))}</span>${cr}${r.noeol ? `<span class="noeol" title="${esc(T('row.noeol'))}">⏎̸</span>` : ''}`;
+  const body = (f && isTexFile(f) && texProseOn(f.path)) ? renderLatexProse(stripCR(r.s)) : esc(stripCR(r.s));
+  return `<span class="mk">${r.t === ' ' ? '' : r.t}</span><span class="src">${body}</span>${cr}${r.noeol ? `<span class="noeol" title="${esc(T('row.noeol'))}">⏎̸</span>` : ''}`;
 }
 function rowsHTML(f) {
   if (f.binary) return `<tr class="info"><td colspan="3">${esc(T('row.binary'))}</td></tr>`;
@@ -1344,7 +1476,7 @@ function rowsHTML(f) {
     for (let i = f.hunkStart[hi]; i < f.hunkStart[hi] + h.rows.length; i++) {
       const r = f.rows[i];
       const edCls = fileEditable && r.n != null ? ' editable' : '';
-      html += `<tr class="r ${r.t === '+' ? 'add' : r.t === '-' ? 'del' : 'ctx'}${edCls}" data-i="${i}"><td class="ln" data-i="${i}">${r.o == null ? '' : r.o}</td><td class="ln" data-i="${i}">${r.n == null ? '' : r.n}</td><td class="code">${codeCell(r)}</td></tr>`;
+      html += `<tr class="r ${r.t === '+' ? 'add' : r.t === '-' ? 'del' : 'ctx'}${edCls}" data-i="${i}"><td class="ln" data-i="${i}">${r.o == null ? '' : r.o}</td><td class="ln" data-i="${i}">${r.n == null ? '' : r.n}</td><td class="code">${codeCell(r, f)}</td></tr>`;
     }
   });
   return html;
@@ -1449,6 +1581,7 @@ function markRanges(el, ranges, cls) {
 function paintFile(f) {
   if (!f.rowEls || f.painted) return;
   f.painted = true;
+  if (isTexFile(f) && texProseOn(f.path)) return;
   const html = new Array(f.rows.length).fill(null);
   if (window.hljs && f.lang && f.rows.length <= 6000) {
     f.hunks.forEach((h, hi) => {
@@ -1471,6 +1604,353 @@ function paintFile(f) {
 window.addEventListener('hljs-ready', () => {
   for (const f of S.files) if (f.painted) { f.painted = false; paintFile(f); }
 });
+window.addEventListener('katex-ready', () => {
+  for (const f of S.files) {
+    if (isTexFile(f) && texProseOn(f.path) && f.rowEls) {
+      f.rowEls = null; f.painted = false;
+      buildRows(f); placeExtras(f.path);
+    }
+  }
+});
+
+// ---------------------------------------------------------------- LaTeX prose view & Overleaf PDF pane
+const TEX_MATH_SYMS = {
+  alpha:'α', beta:'β', gamma:'γ', delta:'δ', epsilon:'ε', varepsilon:'ε', zeta:'ζ', eta:'η', theta:'θ',
+  vartheta:'ϑ', iota:'ι', kappa:'κ', lambda:'λ', mu:'μ', nu:'ν', xi:'ξ', pi:'π', rho:'ρ', sigma:'σ',
+  tau:'τ', upsilon:'υ', phi:'φ', varphi:'φ', chi:'χ', psi:'ψ', omega:'ω',
+  Gamma:'Γ', Delta:'Δ', Theta:'Θ', Lambda:'Λ', Xi:'Ξ', Pi:'Π', Sigma:'Σ', Phi:'Φ', Psi:'Ψ', Omega:'Ω',
+  infty:'∞', partial:'∂', nabla:'∇', sum:'∑', prod:'∏', int:'∫', pm:'±', mp:'∓', times:'×', cdot:'·',
+  dots:'…', ldots:'…', cdots:'⋯', le:'≤', leq:'≤', ge:'≥', geq:'≥', ne:'≠', neq:'≠', approx:'≈', equiv:'≡',
+  sim:'∼', propto:'∝', in:'∈', notin:'∉', subset:'⊂', subseteq:'⊆', cup:'∪', cap:'∩', emptyset:'∅',
+  forall:'∀', exists:'∃', neg:'¬', land:'∧', lor:'∨', to:'→', rightarrow:'→', leftarrow:'←',
+  Rightarrow:'⇒', Leftarrow:'⇐', leftrightarrow:'↔', Leftrightarrow:'⇔', mapsto:'↦', circ:'∘',
+  mathbbR:'ℝ', mathbbN:'ℕ', mathbbZ:'ℤ', mathbbE:'𝔼', mathbbP:'ℙ',
+};
+function prettyMath(expr) {
+  if (window.katex && typeof window.katex.renderToString === 'function') {
+    try { return `<span class="tex-math">${window.katex.renderToString(expr, {throwOnError: false, strict: false})}</span>`; } catch (e) { /* fallback */ }
+  }
+  let s = expr.replace(/\\mathbb\s*\{([A-Za-z])\}/g, (_, c) => TEX_MATH_SYMS['mathbb' + c] || c);
+  s = s.replace(/\\(?:text|mathrm|mathbf|mathcal|mathit|operatorname)\s*\{([^{}]*)\}/g, '$1');
+  s = s.replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1)/($2)');
+  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)');
+  s = s.replace(/\\([A-Za-z]+)/g, (m, w) => TEX_MATH_SYMS[w] || (['left', 'right', 'big', 'Big', 'quad', 'qquad', ','].includes(w) ? ' ' : m));
+  s = s.replace(/\{([^{}]+)\}/g, '$1').replace(/\s+/g, ' ').trim();
+  return `<span class="tex-math">${esc(s)}</span>`;
+}
+function extractBrace(s, pos) {
+  if (s[pos] !== '{') return null;
+  let depth = 0;
+  for (let i = pos; i < s.length; i++) {
+    if (s[i] === '\\' && i + 1 < s.length) { i++; continue; }
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') { depth--; if (depth === 0) return {text: s.slice(pos + 1, i), end: i + 1}; }
+  }
+  return null;
+}
+function skipOptArg(s, pos) {
+  let i = pos;
+  while (i < s.length && /\s/.test(s[i])) i++;
+  if (s[i] !== '[') return {opt: null, end: pos};
+  let depth = 0;
+  for (let j = i; j < s.length; j++) {
+    if (s[j] === '\\' && j + 1 < s.length) { j++; continue; }
+    if (s[j] === '[') depth++;
+    else if (s[j] === ']') { depth--; if (depth === 0) return {opt: s.slice(i + 1, j), end: j + 1}; }
+  }
+  return {opt: null, end: pos};
+}
+function splitTexComment(line) {
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\' && i + 1 < line.length) { i++; continue; }
+    if (line[i] === '%') return [line.slice(0, i), line.slice(i)];
+  }
+  return [line, ''];
+}
+const TEX_SEC_LVL = {title: 0, part: 0, chapter: 1, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 4};
+const TEX_PREAMBLE_RE = /^\s*\\(?:documentclass|usepackage|RequirePackage|newcommand|renewcommand|providecommand|DeclareMathOperator|geometry|definecolor|hypersetup|bibliographystyle|bibliography|addbibresource|input|include|subfile|graphicspath|maketitle|tableofcontents|centering|vspace|hspace|noindent|newpage|clearpage|pagebreak|setlength|setcounter|pagestyle|thispagestyle|author|date|affiliation|iclrfinalcopy|pdfoutput)\b/;
+function renderTexInline(s) {
+  let out = '', i = 0;
+  const n = s.length;
+  while (i < n) {
+    const ch = s[i];
+    if (ch === '$') {
+      const dbl = s[i + 1] === '$';
+      const delim = dbl ? '$$' : '$';
+      const close = s.indexOf(delim, i + delim.length);
+      if (close > i) {
+        out += prettyMath(s.slice(i + delim.length, close));
+        i = close + delim.length;
+        continue;
+      }
+    }
+    if (ch === '\\') {
+      if (s[i + 1] === '(' || s[i + 1] === '[') {
+        const endTok = s[i + 1] === '(' ? '\\)' : '\\]';
+        const close = s.indexOf(endTok, i + 2);
+        if (close > i) { out += prettyMath(s.slice(i + 2, close)); i = close + 2; continue; }
+      }
+      if (s[i + 1] === '\\') { out += ' ↵ '; i += 2; continue; }
+      if ('%&_{}#$~^'.includes(s[i + 1] || '')) { out += esc(s[i + 1]); i += 2; continue; }
+      if (s[i + 1] === ' ' || s[i + 1] === ',' || s[i + 1] === ';' || s[i + 1] === '!') { out += ' '; i += 2; continue; }
+      const m = /^\\([A-Za-z]+)\*?/.exec(s.slice(i));
+      if (m) {
+        const cmd = m[1];
+        let j = i + m[0].length;
+        if (cmd in TEX_SEC_LVL) {
+          const opt = skipOptArg(s, j);
+          let k = opt.end; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-sec tex-sec-${TEX_SEC_LVL[cmd]}">${renderTexInline(arg.text)}</span>`; i = arg.end; continue; }
+        }
+        if (cmd === 'textbf' || cmd === 'bf' || cmd === 'mathbf') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<strong>${renderTexInline(arg.text)}</strong>`; i = arg.end; continue; }
+        }
+        if (cmd === 'emph' || cmd === 'textit' || cmd === 'textsl' || cmd === 'it') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<em>${renderTexInline(arg.text)}</em>`; i = arg.end; continue; }
+        }
+        if (cmd === 'texttt' || cmd === 'url' || cmd === 'path') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<code class="tex-code">${esc(arg.text)}</code>`; i = arg.end; continue; }
+        }
+        if (cmd === 'underline' || cmd === 'uline') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<u>${renderTexInline(arg.text)}</u>`; i = arg.end; continue; }
+        }
+        if (cmd === 'textcolor' || cmd === 'colorbox') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const c = extractBrace(s, k);
+          if (c) {
+            let k2 = c.end; while (k2 < n && /\s/.test(s[k2])) k2++;
+            const t = extractBrace(s, k2);
+            if (t) { out += renderTexInline(t.text); i = t.end; continue; }
+          }
+        }
+        if (cmd === 'href') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const u = extractBrace(s, k);
+          if (u) {
+            let k2 = u.end; while (k2 < n && /\s/.test(s[k2])) k2++;
+            const t = extractBrace(s, k2);
+            if (t) {
+              out += /^https?:\/\//i.test(u.text) ? `<a href="${esc(u.text)}" target="_blank" rel="noopener noreferrer">${renderTexInline(t.text)}</a>` : renderTexInline(t.text);
+              i = t.end; continue;
+            }
+          }
+        }
+        if (/^(?:cite|citep|citet|citeauthor|citeyear|citealp|autocite|parencite|textcite|fullcite)$/.test(cmd)) {
+          let k = skipOptArg(s, j).end;
+          k = skipOptArg(s, k).end;
+          while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-tag tex-cite" title="${esc(m[0] + '{' + arg.text + '}')}">[${esc(arg.text)}]</span>`; i = arg.end; continue; }
+        }
+        if (/^(?:ref|eqref|autoref|cref|Cref|pageref|nameref|vref)$/.test(cmd)) {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-tag tex-ref" title="${esc(m[0] + '{' + arg.text + '}')}">§${esc(arg.text)}</span>`; i = arg.end; continue; }
+        }
+        if (cmd === 'label') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-tag tex-lbl">#${esc(arg.text)}</span>`; i = arg.end; continue; }
+        }
+        if (cmd === 'footnote') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-com"> (${renderTexInline(arg.text)})</span>`; i = arg.end; continue; }
+        }
+        if (cmd === 'caption') {
+          const opt = skipOptArg(s, j);
+          let k = opt.end; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-cap">Caption:</span>${renderTexInline(arg.text)}`; i = arg.end; continue; }
+        }
+        if (cmd === 'item') {
+          const opt = skipOptArg(s, j);
+          out += '<span class="tex-bullet">•</span>' + (opt.opt ? `<strong>${renderTexInline(opt.opt)}</strong> ` : '');
+          i = opt.end; continue;
+        }
+        if (cmd === 'includegraphics') {
+          const opt = skipOptArg(s, j);
+          let k = opt.end; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += `<span class="tex-cmd">🖼 ${esc(arg.text)}</span>`; i = arg.end; continue; }
+        }
+        if (cmd === 'text' || cmd === 'textsc' || cmd === 'textrm' || cmd === 'textsf' || cmd === 'mbox') {
+          let k = j; while (k < n && /\s/.test(s[k])) k++;
+          const arg = extractBrace(s, k);
+          if (arg) { out += renderTexInline(arg.text); i = arg.end; continue; }
+        }
+        if (cmd === 'LaTeX' || cmd === 'TeX') { out += cmd; i = j; continue; }
+        if (cmd === 'quad' || cmd === 'qquad' || cmd === 'hfill') { out += '  '; i = j; continue; }
+        if (cmd === 'verb' && j < n) {
+          const d = s[j], end = s.indexOf(d, j + 1);
+          if (end > j) { out += `<code class="tex-code">${esc(s.slice(j + 1, end))}</code>`; i = end + 1; continue; }
+        }
+        out += `<span class="tex-cmd">${esc(m[0])}</span>`;
+        i = j; continue;
+      }
+    }
+    if (ch === '~') { out += '\u00a0'; i++; continue; }
+    if (ch === '`' && s[i + 1] === '`') { out += '“'; i += 2; continue; }
+    if (ch === "'" && s[i + 1] === "'") { out += '”'; i += 2; continue; }
+    if (ch === '-' && s[i + 1] === '-' && s[i + 2] === '-') { out += '—'; i += 3; continue; }
+    if (ch === '-' && s[i + 1] === '-') { out += '–'; i += 2; continue; }
+    out += esc(ch);
+    i++;
+  }
+  return out;
+}
+function renderLatexProse(raw) {
+  if (!raw.trim()) return ' ';
+  const [body, comment] = splitTexComment(raw);
+  const trimmed = body.trim();
+  const comHtml = comment ? `${trimmed ? ' ' : ''}<span class="tex-com">${esc(comment)}</span>` : '';
+  if (!trimmed) return comHtml;
+  const envM = /^\\(begin|end)\{([^}]+)\}(.*)$/.exec(trimmed);
+  if (envM) {
+    const rest = envM[3].trim();
+    const sym = envM[1] === 'begin' ? '▸' : '◂ /';
+    return `<span class="tex-env">${sym}${esc(envM[2])}</span>` + (rest ? ' ' + renderTexInline(rest) : '') + comHtml;
+  }
+  if (TEX_PREAMBLE_RE.test(trimmed)) {
+    return `<span class="tex-cmd">${esc(trimmed)}</span>` + comHtml;
+  }
+  return renderTexInline(trimmed) + comHtml;
+}
+function toggleTexProse(path) {
+  const f = S.byPath[path], sec = fileSec(path);
+  if (!f || !sec || !isTexFile(f)) return;
+  if (S.directEdit && S.directEdit.path === path) cancelDirectEdit();
+  const on = !texProseOn(path);
+  S.texProse[path] = on;
+  sec.classList.toggle('tex-prose', on);
+  refreshFileHead(f, sec);
+  f.rowEls = null;
+  f.painted = false;
+  if (!sec.classList.contains('folded')) {
+    buildRows(f, sec);
+    paintFile(f);
+    placeExtras(path);
+  }
+}
+
+function setPdfOpen(open, fromUser) {
+  S.pdfOpen = !!open;
+  document.body.classList.toggle('pdf-open', S.pdfOpen);
+  if (fromUser) {
+    try { localStorage.setItem('dr-pdf-closed', S.pdfOpen ? '0' : '1'); } catch (e) { /* storage blocked */ }
+  }
+  renderPdfPane();
+}
+function syncLatex(lx, firstBoot) {
+  S.latex = lx || null;
+  const btn = $('#btn-pdf'), dot = $('#pdf-dot');
+  const show = !!(lx && lx.hasTex);
+  if (btn) btn.hidden = !show;
+  if (dot) {
+    dot.className = 'pdf-dot' + (lx && lx.status === 'compiling' ? ' compiling' : lx && lx.status === 'ok' ? ' ok' : lx && lx.status === 'error' ? ' err' : '');
+  }
+  if (!show && S.pdfOpen) { setPdfOpen(false, false); return; }
+  if (firstBoot && show && lx.available && window.innerWidth >= 1024) {
+    let closed = false;
+    try { closed = localStorage.getItem('dr-pdf-closed') === '1'; } catch (e) { /* ignore */ }
+    if (!closed) setPdfOpen(true, false);
+  }
+  renderPdfPane();
+}
+function pdfHeadMarkup(lx) {
+  const mains = lx.mains || [];
+  const mainSel = mains.length > 1
+    ? `<select class="pdf-main-sel" title="${esc(T('pdf.mainTip'))}">${mains.map(m => `<option value="${esc(m)}" ${m === lx.main ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`
+    : (lx.main ? `<span class="mono small" title="${esc(lx.main)}">${esc(lx.main.split('/').pop())}</span>` : '');
+  const seg = `<div class="pdf-seg">
+    <button class="${lx.mode !== 'diff' ? 'on' : ''}" data-act="pdf-mode" data-mode="current" ${!lx.available ? 'disabled' : ''}>${esc(T('pdf.current'))}</button>
+    <button class="${lx.mode === 'diff' ? 'on' : ''}" data-act="pdf-mode" data-mode="diff" ${!lx.canDiff ? 'disabled' : ''} title="${esc(T(lx.canDiff ? 'pdf.diffTip' : 'pdf.diffNoTool'))}">${esc(T('pdf.diff'))}</button>
+  </div>`;
+  let status = '';
+  if (lx.status === 'compiling') status = `<span class="pdf-status"><span class="spin"></span> ${esc(T('pdf.compiling'))}</span>`;
+  else if (lx.status === 'ok') status = `<span class="pdf-status ${lx.warning ? 'is-warn' : 'is-ok'}">${lx.warning ? '⚠' : '✓'} ${esc(lx.warning ? T('pdf.okWarn', lx.duration || 0) : T('pdf.ok', lx.duration || 0))}</span>`;
+  else if (lx.status === 'error') status = `<span class="pdf-status is-err">✗ ${esc(T('pdf.error'))}</span>`;
+  else status = `<span class="pdf-status">${esc(T('pdf.idle'))}</span>`;
+  const pdfUrl = lx.hasPdf ? `api/latex/pdf?mode=${encodeURIComponent(lx.mode || 'current')}&v=${lx.pdfVersion || 0}` : '';
+  return `${mainSel}${seg}${status}<span class="spacer"></span>
+    ${lx.available && lx.main ? `<button class="btn xs ghost" data-act="pdf-recompile" title="${esc(T('pdf.recompile'))}" ${lx.status === 'compiling' ? 'disabled' : ''}>↻</button>` : ''}
+    ${lx.hasLog ? `<button class="btn xs ghost" data-act="pdf-log" title="${esc(T('pdf.log'))}">📋</button>` : ''}
+    ${pdfUrl ? `<a class="btn xs ghost" href="${esc(pdfUrl)}" target="_blank" rel="noopener" title="${esc(T('pdf.openTab'))}">↗</a>` : ''}
+    <button class="btn xs ghost" data-act="pdf-close" title="${esc(T('pdf.close'))}">✕</button>`;
+}
+function renderPdfPane() {
+  if (!S.pdfOpen || !S.latex) return;
+  const lx = S.latex;
+  const head = $('#pdf-head'), body = $('#pdf-body');
+  const h = pdfHeadMarkup(lx);
+  if (S.pdfHeadHtml !== h) { head.innerHTML = h; S.pdfHeadHtml = h; }
+  if (!lx.available) {
+    S.pdfLoadedKey = '';
+    body.innerHTML = `<div class="pdf-empty">${esc(T('pdf.noCompiler'))}</div>`;
+    return;
+  }
+  if (!lx.main) {
+    S.pdfLoadedKey = '';
+    body.innerHTML = `<div class="pdf-empty">${esc(T('pdf.noMain'))}</div>`;
+    return;
+  }
+  if (lx.hasPdf) {
+    const key = `${lx.main}|${lx.mode}|${lx.pdfVersion}`;
+    let notice = body.querySelector('.pdf-notice');
+    const noticeType = lx.status === 'error' ? 'err' : (lx.warning ? 'warn' : '');
+    const noticeMsg = lx.status === 'error' ? (T('pdf.showingPrev') + ' ' + trunc(lx.error, 140)) : (lx.warning ? trunc(lx.warning, 140) : '');
+    let frame = body.querySelector('#pdf-frame');
+    if (!frame) {
+      body.innerHTML = `<iframe id="pdf-frame" title="LaTeX PDF Preview"></iframe>`;
+      frame = body.querySelector('#pdf-frame');
+      S.pdfLoadedKey = '';
+    }
+    if (noticeType) {
+      if (!notice) { notice = document.createElement('div'); body.insertBefore(notice, frame); }
+      notice.className = 'pdf-notice ' + noticeType;
+      notice.innerHTML = `<span>${esc(noticeMsg)}</span><span class="spacer"></span>${lx.hasLog ? `<button class="btn xs" data-act="pdf-log">${esc(T('pdf.log'))}</button>` : ''}`;
+    } else if (notice) {
+      notice.remove();
+    }
+    if (S.pdfLoadedKey !== key) {
+      S.pdfLoadedKey = key;
+      frame.src = `api/latex/pdf?mode=${encodeURIComponent(lx.mode || 'current')}&v=${lx.pdfVersion || 0}`;
+    }
+    return;
+  }
+  S.pdfLoadedKey = '';
+  if (lx.status === 'compiling') {
+    body.innerHTML = `<div class="pdf-empty"><span class="spin"></span> ${esc(T('pdf.compiling'))} <span class="mono">${esc(lx.main)}</span></div>`;
+  } else if (lx.status === 'error') {
+    body.innerHTML = `<div class="pdf-empty"><div><b>${esc(T('pdf.error'))}</b> · <span class="mono">${esc(lx.main)}</span></div>
+      <div class="pdf-err">${esc(lx.error || T('pdf.error'))}</div>
+      <div class="row" style="margin-top:10px">
+        ${lx.hasLog ? `<button class="btn sm" data-act="pdf-log">📋 ${esc(T('pdf.log'))}</button>` : ''}
+        <button class="btn sm primary" data-act="pdf-recompile">↻ ${esc(T('pdf.recompile'))}</button>
+      </div></div>`;
+  } else {
+    body.innerHTML = `<div class="pdf-empty"><button class="btn primary" data-act="pdf-recompile">↻ ${esc(T('pdf.recompile'))}</button></div>`;
+  }
+}
+async function compileLatex(opts) {
+  const res = await api('POST', 'api/latex/compile', opts || {});
+  syncLatex(res, false);
+}
+async function showLatexLog() {
+  const res = await api('GET', 'api/latex/status?log=1');
+  openModal(`<h2>${esc(T('pdf.logTitle', res.main || ''))}</h2>
+    <pre class="pdf-log">${esc(res.log || '(empty)')}</pre>
+    <div class="row"><span class="spacer"></span><button class="btn primary" data-act="modal-close">${esc(T('common.close'))}</button></div>`, 'wide');
+}
 
 // ---------------------------------------------------------------- threads, walkthroughs and the selection bar
 function placeExtras(path) {
@@ -2207,6 +2687,12 @@ function toast(msg, kind) {
 
 const ACTIONS = {
   'toggle-side': () => document.body.classList.toggle('side-open'),
+  'toggle-pdf': () => setPdfOpen(!S.pdfOpen, true),
+  'pdf-close': () => setPdfOpen(false, true),
+  'pdf-mode': el => compileLatex({mode: el.dataset.mode}),
+  'pdf-recompile': () => compileLatex({}),
+  'pdf-log': () => showLatexLog(),
+  'toggle-tex-prose': el => toggleTexProse(fileOf(el).path),
   'goto-file': el => gotoFile(el.dataset.path),
   'fold': el => { const sec = el.closest('section.file'); setFold(sec.dataset.path, !sec.classList.contains('folded')); },
   'overview': () => overview(),
@@ -2331,7 +2817,19 @@ $('#files').addEventListener('click', e => {
   const r = f && f.rows[+tr.dataset.i];
   if (!r || r.n == null) return;
   const src = td.querySelector('.src');
-  const offset = src ? caretOffsetIn(src) : null;
+  let offset = src ? caretOffsetIn(src) : null;
+  if (offset != null && isTexFile(f) && texProseOn(path)) {
+    const raw = stripCR(r.s), rendered = src.textContent || '';
+    const before = rendered.slice(Math.max(0, offset - 12), offset).trim();
+    const after = rendered.slice(offset, offset + 12).trim();
+    const tok = (after.match(/^[A-Za-z0-9\u4e00-\u9fff]+/) || before.match(/[A-Za-z0-9\u4e00-\u9fff]+$/) || [''])[0];
+    if (tok && tok.length >= 2) {
+      const hit = raw.indexOf(tok);
+      offset = hit >= 0 ? hit : Math.min(offset, raw.length);
+    } else {
+      offset = Math.min(offset, raw.length);
+    }
+  }
   if (S.directEdit && S.directEdit.tr !== tr) {
     S.directEdit.suppressBlur = true;
     commitDirectEdit({path, lineNo: r.n, caretPos: offset}).catch(err => toast(err.message));
@@ -2348,6 +2846,33 @@ document.addEventListener('mouseup', () => { dragging = null; });
 $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && !e.currentTarget.dataset.sticky) closeModal(); });
 $('#modal').addEventListener('input', e => { if (e.target.id === 'overall') S.draftComment = e.target.value; });
 $('#filter').addEventListener('input', renderSidebar);
+$('#pdf-head').addEventListener('change', e => {
+  if (e.target.matches('.pdf-main-sel')) compileLatex({main: e.target.value}).catch(err => toast(err.message));
+});
+(() => {
+  const sp = $('#pdf-splitter');
+  if (!sp) return;
+  try { const w = localStorage.getItem('dr-pdf-w'); if (w) document.documentElement.style.setProperty('--pdf-w', w); } catch (e) { /* ignore */ }
+  let active = false;
+  sp.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    active = true;
+    document.body.classList.add('pdf-dragging');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!active) return;
+    const vw = document.documentElement.clientWidth;
+    const px = Math.max(280, Math.min(Math.round(vw * 0.72), vw - e.clientX));
+    document.documentElement.style.setProperty('--pdf-w', px + 'px');
+  });
+  document.addEventListener('mouseup', () => {
+    if (!active) return;
+    active = false;
+    document.body.classList.remove('pdf-dragging');
+    try { localStorage.setItem('dr-pdf-w', getComputedStyle(document.documentElement).getPropertyValue('--pdf-w').trim()); } catch (e) { /* ignore */ }
+  });
+})();
 document.addEventListener('keydown', e => {
   const typing = e.target.matches && e.target.matches('input, textarea, select');
   if (e.key === 'Enter' && typing && e.target.matches('.lk-input')) {

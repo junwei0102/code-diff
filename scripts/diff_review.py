@@ -21,10 +21,12 @@ import argparse
 import difflib
 import fnmatch
 import getpass
+import glob
 import hashlib
 import hmac
 import html
 import http.client
+import io
 import ipaddress
 import json
 import os
@@ -38,6 +40,8 @@ import socket
 import socketserver
 import stat
 import subprocess
+import tarfile
+import tempfile
 import threading
 import time
 import traceback
@@ -1465,6 +1469,500 @@ def code_span(text):
     return "`` %s ``" % text if "`" in text else "`%s`" % text
 
 
+# ----------------------------------------------------------------------------- LaTeX preview & latexdiff
+
+TEX_TRIGGER_EXTS = (".tex", ".bib", ".sty", ".cls")
+TEX_MAIN_NAMES = {"main.tex", "paper.tex", "manuscript.tex", "root.tex", "draft.tex", "thesis.tex", "arxiv.tex"}
+TEX_SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "build", "dist", ".cache", "out", "_build"}
+TEX_DOC_RE = re.compile(r"(?m)^[^%\n]*\\documentclass\b")
+TEX_INPUT_RE = re.compile(r"(?m)^[^%\n]*\\(?:input|include|subfile)\s*\{([^}\n]+)\}")
+TEX_PROG_RE = re.compile(r"(?im)^%\s*!TEX\s+(?:TS-)?program\s*=\s*(xelatex|lualatex|pdflatex)\b")
+TEX_XELATEX_RE = re.compile(r"(?m)^[^%\n]*\\usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:xeCJK|fontspec|ctex|polyglossia)\b")
+TEX_LUALATEX_RE = re.compile(r"(?m)^[^%\n]*\\usepackage(?:\[[^\]]*\])?\{[^}]*\b(?:luatexbase|luacode)\b")
+LATEX_COMPILE_TIMEOUT = 120
+
+
+def _tex_search_dirs():
+    dirs = ["/Library/TeX/texbin", "/usr/texbin", "/opt/homebrew/bin", "/usr/local/bin"]
+    for pattern in ("/usr/local/texlive/*/bin/*", os.path.expanduser("~/texlive/*/bin/*")):
+        dirs.extend(sorted(glob.glob(pattern), reverse=True))
+    return [d for d in dict.fromkeys(dirs) if os.path.isdir(d)]
+
+
+def find_tex_bin(name, extra_dirs):
+    hit = shutil.which(name)
+    if hit:
+        return hit
+    for d in extra_dirs:
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
+def find_tex_tools():
+    extra = _tex_search_dirs()
+    tools = {name: find_tex_bin(name, extra) for name in ("latexmk", "pdflatex", "xelatex", "lualatex", "latexdiff")}
+    bin_dirs = []
+    for p in tools.values():
+        if p:
+            d = os.path.dirname(p)
+            if d not in bin_dirs:
+                bin_dirs.append(d)
+    tools["_dirs"] = bin_dirs
+    return tools
+
+
+def tex_env(tools, src_dirs):
+    env = os.environ.copy()
+    path_parts = [p for p in env.get("PATH", "").split(os.pathsep) if p]
+    for d in reversed(tools.get("_dirs") or []):
+        if d not in path_parts:
+            path_parts.insert(0, d)
+    env["PATH"] = os.pathsep.join(path_parts)
+    if isinstance(src_dirs, str):
+        src_dirs = [src_dirs]
+    prefix = "".join("%s//:" % os.path.abspath(d) for d in src_dirs if d)
+    for var in ("TEXINPUTS", "BIBINPUTS", "BSTINPUTS"):
+        cur = env.get(var, "")
+        env[var] = prefix + cur if cur.endswith(":") else (prefix + cur + ":" if cur else prefix)
+    env["max_print_line"] = "1000"
+    return env
+
+
+def detect_tex_engine(full_path):
+    try:
+        with open(full_path, "rb") as fh:
+            head = fh.read(24576).decode("utf-8", "replace")
+    except OSError:
+        return "pdflatex"
+    m = TEX_PROG_RE.search(head)
+    if m:
+        return m.group(1).lower()
+    if TEX_XELATEX_RE.search(head):
+        return "xelatex"
+    if TEX_LUALATEX_RE.search(head):
+        return "lualatex"
+    return "pdflatex"
+
+
+def _norm_tex_ref(base_dir, ref):
+    ref = ref.strip()
+    if not ref:
+        return ""
+    joined = os.path.normpath(os.path.join(base_dir, ref)) if base_dir else os.path.normpath(ref)
+    joined = joined.replace(os.sep, "/")
+    return joined if joined.lower().endswith(".tex") else (joined + ".tex")
+
+
+def find_tex_mains(root, changed_paths):
+    """Find candidate main .tex files (containing \\documentclass) ranked by relevance to changed files."""
+    changed_set = {p.replace(os.sep, "/") for p in changed_paths}
+    changed_tex = {p for p in changed_set if p.lower().endswith(".tex")}
+    changed_dirs = {os.path.dirname(p) for p in changed_set if p.lower().endswith(TEX_TRIGGER_EXTS)}
+    candidates = []
+    scanned = 0
+    root_abs = os.path.abspath(root)
+    for cur, dirs, files in os.walk(root_abs):
+        rel_dir = os.path.relpath(cur, root_abs)
+        depth = 0 if rel_dir == "." else rel_dir.count(os.sep) + 1
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in TEX_SKIP_DIRS and depth < 4)
+        for name in sorted(files):
+            if not name.lower().endswith(".tex"):
+                continue
+            scanned += 1
+            if scanned > 400:
+                break
+            full = os.path.join(cur, name)
+            try:
+                with open(full, "rb") as fh:
+                    head = fh.read(32768).decode("utf-8", "replace")
+            except OSError:
+                continue
+            if not TEX_DOC_RE.search(head):
+                continue
+            rel = os.path.relpath(full, root_abs).replace(os.sep, "/")
+            rel_d = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")
+            refs = {_norm_tex_ref(rel_d, m.group(1)) for m in TEX_INPUT_RE.finditer(head)}
+            score = 0
+            if rel in changed_set:
+                score += 60
+            if refs & changed_tex:
+                score += 90
+            elif any(cd == rel_d or (rel_d and cd.startswith(rel_d + "/")) or (not rel_d) for cd in changed_dirs):
+                score += 25
+            if name.lower() in TEX_MAIN_NAMES:
+                score += 15
+            score -= depth * 5
+            candidates.append((-score, depth, rel))
+        if scanned > 400:
+            break
+    candidates.sort()
+    return [rel for _, _, rel in candidates]
+
+
+def extract_tex_error(log_text):
+    lines = (log_text or "").splitlines()
+    errs = []
+    for i, ln in enumerate(lines):
+        if ln.startswith("!") or re.match(r"^[^:\s]+\.tex:\d+:", ln):
+            errs.append(ln.strip())
+            if i + 1 < len(lines) and lines[i + 1].strip() and not lines[i + 1].startswith("!"):
+                errs.append("  " + lines[i + 1].strip())
+            if len(errs) >= 6:
+                break
+    if errs:
+        return "\n".join(errs)[:600]
+    tail = [ln.strip() for ln in lines[-12:] if ln.strip()]
+    return "\n".join(tail[-4:])[:600] if tail else "LaTeX compilation failed"
+
+
+def is_valid_pdf(path):
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) < 100:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
+def extract_git_tree(repo_root, ref, dest_dir):
+    proc = subprocess.run(["git", "archive", "--format=tar", ref], cwd=repo_root,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode("utf-8", "replace").strip() or "git archive failed")
+    with tarfile.open(fileobj=io.BytesIO(proc.stdout), mode="r:") as tf:
+        root_real = os.path.realpath(dest_dir)
+        for member in tf.getmembers():
+            if not (member.isfile() or member.isdir()):
+                continue
+            target = os.path.realpath(os.path.join(dest_dir, member.name))
+            if not (target == root_real or target.startswith(root_real + os.sep)):
+                continue
+            tf.extract(member, dest_dir)
+
+
+class LatexCompiler:
+    """Out-of-tree LaTeX compiler (current PDF and latexdiff red/blue PDF) kept inside state_dir."""
+
+    def __init__(self, app):
+        self.app = app
+        self.lock = threading.Lock()
+        self.tools = find_tex_tools()
+        self.available = bool(self.tools["latexmk"] or self.tools["pdflatex"]
+                              or self.tools["xelatex"] or self.tools["lualatex"])
+        self.has_tex = False
+        self.mains = []
+        self.main = ""
+        self.mode = "current"
+        self.status = "idle"
+        self.engine = ""
+        self.error = ""
+        self.warning = ""
+        self.log = ""
+        self.duration = 0.0
+        self.pdf_version = 0
+        self.pdf_paths = {}
+        self._gen = 0
+        self._proc = None
+
+    def _can_diff(self):
+        repo = self.app.repo
+        return bool(self.available and self.tools["latexdiff"] and repo.git_dir
+                    and not repo.patch and repo.base_ref != EMPTY_TREE)
+
+    def is_compiling(self):
+        with self.lock:
+            return self.status == "compiling"
+
+    def refresh_files(self, files, auto_compile=False):
+        changed = [f["path"] for f in files]
+        tex_hit = any(p.lower().endswith(".tex") for p in changed)
+        aux_hit = any(p.lower().endswith(TEX_TRIGGER_EXTS) for p in changed)
+        mains = find_tex_mains(self.app.repo.root, changed) if (tex_hit or aux_hit) else []
+        has_tex = bool(tex_hit or mains)
+        should_compile = None
+        with self.lock:
+            self.has_tex = has_tex
+            self.mains = mains
+            if self.main not in mains:
+                self.main = mains[0] if mains else ""
+            if not self._can_diff() and self.mode == "diff":
+                self.mode = "current"
+            if auto_compile and has_tex and self.main and self.available:
+                should_compile = (self.main, self.mode)
+        if should_compile:
+            try:
+                self.trigger(main=should_compile[0], mode=should_compile[1])
+            except ApiError:
+                pass
+
+    def _cancel_proc_locked(self):
+        proc = self._proc
+        self._proc = None
+        if proc is not None and proc.poll() is None:
+            kill_tree(proc)
+
+    def stop_all(self):
+        with self.lock:
+            self._gen += 1
+            self._cancel_proc_locked()
+
+    def _resolve_main(self, main):
+        if main:
+            main = str(main).strip().replace("\\", "/")
+            full = self.app._safe_worktree_path(main)
+            if not os.path.isfile(full) or not main.lower().endswith(".tex"):
+                raise ApiError(400, self.app.tr("找不到指定的 .tex 文件", "specified .tex file not found"))
+            return main
+        with self.lock:
+            return self.main
+
+    def trigger(self, main=None, mode=None):
+        if not self.available:
+            raise ApiError(400, self.app.tr("这台机器上没找到 latexmk / pdflatex / xelatex",
+                                            "No latexmk / pdflatex / xelatex found on this machine"))
+        chosen_main = self._resolve_main(main)
+        if not chosen_main:
+            raise ApiError(400, self.app.tr("仓库里没找到包含 \\documentclass 的主 .tex 文件",
+                                            "No main .tex file with \\documentclass found in this repository"))
+        with self.lock:
+            chosen_mode = mode if mode is not None else self.mode
+            if chosen_mode not in ("current", "diff"):
+                raise ApiError(400, "mode must be current or diff")
+            if chosen_mode == "diff" and not self._can_diff():
+                raise ApiError(400, self.app.tr("当前环境不支持 latexdiff（需要 git 仓库且安装 latexdiff）",
+                                                "latexdiff is unavailable (needs a git repo and latexdiff installed)"))
+            self.main = chosen_main
+            if chosen_main not in self.mains:
+                self.mains = [chosen_main] + self.mains
+            self.mode = chosen_mode
+            self.status = "compiling"
+            self.error = ""
+            self.warning = ""
+            self._gen += 1
+            gen = self._gen
+            self._cancel_proc_locked()
+        with self.app.store.lock:
+            self.app.store.bump()
+        threading.Thread(target=self._worker, args=(gen, chosen_main, chosen_mode), daemon=True).start()
+        return self.describe()
+
+    def _run_cmd(self, gen, cmd, cwd, env, timeout=LATEX_COMPILE_TIMEOUT):
+        with self.lock:
+            if gen != self._gen:
+                return -1, "", True
+            proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    start_new_session=True)
+            self._proc = proc
+        try:
+            out, _ = proc.communicate(timeout=timeout)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            kill_tree(proc)
+            try:
+                out, _ = proc.communicate(timeout=2)
+            except Exception:
+                out = b""
+            return -2, out.decode("utf-8", "replace") + "\n[Timed out after %ds]" % timeout, False
+        finally:
+            with self.lock:
+                if self._proc is proc:
+                    self._proc = None
+        with self.lock:
+            cancelled = gen != self._gen
+        return rc, out.decode("utf-8", "replace"), cancelled
+
+    def _compile_tex_file(self, gen, tex_path, cwd, outdir, env, engine, force=False):
+        t0 = time.time() - 1.0
+        base = os.path.basename(tex_path)
+        stem = os.path.splitext(base)[0]
+        pdf_path = os.path.join(outdir, stem + ".pdf")
+        tools = self.tools
+        if tools["latexmk"]:
+            flag = {"xelatex": "-xelatex", "lualatex": "-lualatex"}.get(engine, "-pdf")
+            cmd = [tools["latexmk"], flag, "-interaction=nonstopmode", "-file-line-error",
+                   "-outdir=" + outdir]
+            if force:
+                cmd.append("-f")
+            cmd.append(tex_path if os.path.dirname(tex_path) != os.path.abspath(cwd) else base)
+            rc, log, cancelled = self._run_cmd(gen, cmd, cwd, env)
+        else:
+            eng_bin = tools.get(engine) or tools.get("pdflatex") or tools.get("xelatex") or tools.get("lualatex")
+            cmd = [eng_bin, "-interaction=nonstopmode", "-file-line-error", "-output-directory=" + outdir, tex_path]
+            rc, log1, cancelled = self._run_cmd(gen, cmd, cwd, env)
+            if cancelled:
+                return rc, log1, None, True
+            rc2, log2, cancelled = self._run_cmd(gen, cmd, cwd, env)
+            rc, log = rc2, log1 + "\n--- pass 2 ---\n" + log2
+        if cancelled:
+            return rc, log, None, True
+        fresh_pdf = is_valid_pdf(pdf_path) and os.path.getmtime(pdf_path) >= t0
+        return rc, log, (pdf_path if fresh_pdf else None), False
+
+    def _resolve_refs(self):
+        repo = self.app.repo
+        left = repo.base_ref.split("..")[0] or "HEAD"
+        if "..." in repo.base_ref:
+            left = git(["merge-base", left, repo.base_ref.split("...")[1] or "HEAD"], repo.root).strip()
+        right = None
+        if repo.range:
+            right = repo.base_ref.split("..")[-1].lstrip(".") or "HEAD"
+        return left, right
+
+    def _worker(self, gen, main, mode):
+        started = time.time()
+        tmp_dirs = []
+        try:
+            repo = self.app.repo
+            left_ref, right_ref = self._resolve_refs()
+            if right_ref:
+                new_root = tempfile.mkdtemp(prefix="dr-new-", dir=self.app.state_dir)
+                tmp_dirs.append(new_root)
+                extract_git_tree(repo.root, right_ref, new_root)
+            else:
+                new_root = repo.root
+            new_main = os.path.join(new_root, main)
+            if not os.path.isfile(new_main):
+                raise RuntimeError(self.app.tr("找不到主文件：%s", "Main file not found: %s") % main)
+            engine = detect_tex_engine(new_main)
+            if not self.tools.get(engine) and not self.tools.get("latexmk"):
+                engine = next((e for e in ("pdflatex", "xelatex", "lualatex") if self.tools.get(e)), "pdflatex")
+            key_hash = hashlib.sha1(main.encode("utf-8")).hexdigest()[:10]
+            if mode == "current":
+                outdir = private_dir(os.path.join(self.app.state_dir, "latex-build", key_hash))
+                cwd = os.path.dirname(new_main)
+                env = tex_env(self.tools, [cwd, new_root])
+                rc, log, pdf_path, cancelled = self._compile_tex_file(
+                    gen, new_main, cwd, outdir, env, engine, force=False)
+            else:
+                old_root = tempfile.mkdtemp(prefix="dr-old-", dir=self.app.state_dir)
+                tmp_dirs.append(old_root)
+                extract_git_tree(repo.root, left_ref, old_root)
+                old_main = os.path.join(old_root, main)
+                if not os.path.isfile(old_main):
+                    raise RuntimeError(self.app.tr(
+                        "旧版本（%s）里没有 %s，无法生成 latexdiff 红蓝对照 PDF",
+                        "%s does not exist in base (%s), so latexdiff cannot run") % (left_ref, main))
+                outdir = private_dir(os.path.join(self.app.state_dir, "latex-diff-build", key_hash))
+                diff_tex = os.path.join(outdir, "__diff_" + os.path.basename(main))
+                cwd = os.path.dirname(new_main)
+                env = tex_env(self.tools, [cwd, new_root, os.path.dirname(old_main), old_root])
+                # latexdiff --flatten handles multi-file \input documents; fall back to direct latexdiff if needed
+                diff_log = ""
+                diff_out = ""
+                for extra_args in (["--flatten", "--encoding=utf8"], ["--encoding=utf8"]):
+                    with self.lock:
+                        if gen != self._gen:
+                            return
+                        proc = subprocess.Popen(
+                            [self.tools["latexdiff"]] + extra_args + [old_main, new_main],
+                            cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                        self._proc = proc
+                    try:
+                        sout, serr = proc.communicate(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        kill_tree(proc)
+                        raise RuntimeError("latexdiff timed out")
+                    finally:
+                        with self.lock:
+                            if self._proc is proc:
+                                self._proc = None
+                    with self.lock:
+                        if gen != self._gen:
+                            return
+                    text = sout.decode("utf-8", "replace")
+                    diff_log += serr.decode("utf-8", "replace")
+                    if "\\documentclass" in text:
+                        diff_out = text
+                        break
+                if not diff_out:
+                    raise RuntimeError("latexdiff failed: " + (diff_log.strip() or "empty output")[:500])
+                write_atomic(diff_tex, diff_out)
+                rc, compile_log, pdf_path, cancelled = self._compile_tex_file(
+                    gen, diff_tex, cwd, outdir, env, engine, force=True)
+                log = (diff_log + "\n" + compile_log).strip()
+            if cancelled:
+                return
+            dur = round(time.time() - started, 2)
+            with self.lock:
+                if gen != self._gen:
+                    return
+                self.engine = engine
+                self.duration = dur
+                self.log = log[-40000:]
+                if pdf_path:
+                    self.pdf_paths[(main, mode)] = pdf_path
+                    self.pdf_version += 1
+                    self.status = "ok"
+                    self.error = ""
+                    self.warning = extract_tex_error(log) if rc != 0 else ""
+                else:
+                    self.status = "error"
+                    self.error = extract_tex_error(log)
+                    self.warning = ""
+        except Exception as e:
+            dur = round(time.time() - started, 2)
+            with self.lock:
+                if gen != self._gen:
+                    return
+                self.duration = dur
+                self.status = "error"
+                self.error = str(e)[:600]
+                if not self.log:
+                    self.log = str(e)
+        finally:
+            for d in tmp_dirs:
+                shutil.rmtree(d, ignore_errors=True)
+        with self.app.store.lock:
+            self.app.store.bump()
+
+    def pdf_bytes(self, mode=None):
+        with self.lock:
+            m = mode if mode in ("current", "diff") else self.mode
+            path = self.pdf_paths.get((self.main, m))
+            main = self.main
+        if not path or not is_valid_pdf(path):
+            raise ApiError(404, self.app.tr("PDF 还没有编译好", "PDF has not been compiled yet"))
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError as e:
+            raise ApiError(500, str(e))
+        stem = os.path.splitext(os.path.basename(main or "preview.tex"))[0]
+        fname = "%s%s.pdf" % (stem, "-diff" if m == "diff" else "")
+        return data, fname
+
+    def describe(self, include_log=False):
+        with self.lock:
+            has_cur = is_valid_pdf(self.pdf_paths.get((self.main, "current"), ""))
+            has_diff = is_valid_pdf(self.pdf_paths.get((self.main, "diff"), ""))
+            out = {
+                "hasTex": self.has_tex,
+                "available": self.available,
+                "canDiff": self._can_diff(),
+                "mains": list(self.mains),
+                "main": self.main,
+                "mode": self.mode,
+                "status": self.status,
+                "engine": self.engine,
+                "error": self.error,
+                "warning": self.warning,
+                "duration": self.duration,
+                "pdfVersion": self.pdf_version,
+                "hasPdf": has_diff if self.mode == "diff" else has_cur,
+                "hasCurrentPdf": has_cur,
+                "hasDiffPdf": has_diff,
+                "hasLog": bool(self.log),
+            }
+            if include_log:
+                out["log"] = self.log
+            return out
+
+
 class App:
     def __init__(self, opts):
         self.opts = opts
@@ -1481,6 +1979,7 @@ class App:
         self.notes = {"summary": "", "files": {}}
         self.diff_version = 0
         self.explainer = Explainer(self, opts.claude, opts.agy, opts.backend)
+        self.latex = LatexCompiler(self)
         if opts.model is not None:
             self.store.data["settings"]["model"] = opts.model
         self.end_orphaned_runs()
@@ -1539,7 +2038,10 @@ class App:
             self.notes = parse_notes(cur.get("notes", ""), list(self.by_path))
             self.diff_version = self.store.bump()
             self.store.save(force=True)
-            return {"round": rnd, "newRound": started, "unknownReplies": unknown, "stats": self.stats()}
+            files_snap = list(self.files)
+            result = {"round": rnd, "newRound": started, "unknownReplies": unknown, "stats": self.stats()}
+        self.latex.refresh_files(files_snap, auto_compile=True)
+        return result
 
     def tr(self, zh, en):
         """A message in the language the reviewer picked in the UI."""
@@ -1572,7 +2074,8 @@ class App:
         with self.store.lock:
             return {"serverId": self.server_id, "repo": self.repo.describe(), "files": self.files,
                     "skipped": self.skipped, "notes": self.notes, "diffVersion": self.diff_version,
-                    "stats": self.stats(), "ai": self.explainer.describe(), "features": ["lookup", "edit"],
+                    "stats": self.stats(), "ai": self.explainer.describe(), "latex": self.latex.describe(),
+                    "features": ["lookup", "edit", "latex"],
                     "listen": {"mode": self.listen.get("mode"), "host": self.listen.get("host")},
                     "state": self.state_since(0)}
 
@@ -1587,7 +2090,7 @@ class App:
             round_edits = (st.get("edits") or {}).get(str(st["round"])) or {}
             return {"serverId": self.server_id, "version": st["version"], "diffVersion": self.diff_version,
                     "round": st["round"], "rounds": st["rounds"], "verdicts": st["verdicts"],
-                    "editedFiles": sorted(round_edits.keys()),
+                    "editedFiles": sorted(round_edits.keys()), "latex": self.latex.describe(),
                     "settings": st["settings"], "threads": changed(st["threads"]),
                     "annotations": changed(st["annotations"]), "jobs": self.explainer.active, "full": full,
                     "deleted": [k for k, v in st["deleted"].items() if full or v > since]}
@@ -1737,8 +2240,12 @@ class App:
             self.diff_version = self.store.bump()
             self.store.save(force=True)
             new_hash = hashlib.sha1(new_text.encode("utf-8")).hexdigest()[:16]
-            return {"ok": True, "changed": True, "diffVersion": self.diff_version,
-                    "hash": new_hash, "editedFiles": sorted(round_edits.keys())}
+            files_snap = list(self.files)
+            result = {"ok": True, "changed": True, "diffVersion": self.diff_version,
+                      "hash": new_hash, "editedFiles": sorted(round_edits.keys())}
+        if path.lower().endswith(TEX_TRIGGER_EXTS) or self.latex.has_tex:
+            self.latex.refresh_files(files_snap, auto_compile=True)
+        return result
 
     def review_text(self, rnd):
         path = os.path.join(self.reviews_dir, "round-%d.md" % rnd)
@@ -2291,6 +2798,8 @@ ROUTES = {
     ("GET", "/api/state"): lambda app, body, q: app.state_since(query_int(q, "since")),
     ("GET", "/api/file"): lambda app, body, q: app.file_content((q.get("path") or [""])[0], (q.get("side") or ["new"])[0]),
     ("GET", "/api/review"): lambda app, body, q: app.review_text(query_int(q, "round")),
+    ("GET", "/api/latex/status"): lambda app, body, q: app.latex.describe(include_log=bool((q.get("log") or [""])[0])),
+    ("POST", "/api/latex/compile"): lambda app, body, q: app.latex.trigger(body.get("main"), body.get("mode")),
     ("POST", "/api/ask"): lambda app, body, q: app.ask(body),
     ("POST", "/api/thread"): lambda app, body, q: app.update_thread(body),
     ("POST", "/api/cancel"): lambda app, body, q: app.cancel(body),
@@ -2327,9 +2836,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        extra = headers or {}
+        if not any(k.lower() == "x-frame-options" for k in extra):
+            self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        for key, value in (headers or {}).items():
+        for key, value in extra.items():
             self.send_header(key, value)
         self.end_headers()
         if self.command != "HEAD":
@@ -2371,6 +2882,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_body(204, b"", "image/x-icon")
             if not path.startswith("/api/"):
                 return self.send_json({"error": "not found"}, 404)
+            if method == "GET" and path == "/api/latex/pdf":
+                tok = self.headers.get("X-DR-Token", "") or self.cookie_token() or (query.get("token") or [""])[0]
+                if not self.token_ok(tok):
+                    return self.send_json({"error": "missing or wrong token"}, 401)
+                if key and key != app.key:
+                    return self.forward(key, method, path, url.query, token=app.token)
+                app.last_activity = now()
+                mode = (query.get("mode") or [""])[0] or None
+                data, fname = app.latex.pdf_bytes(mode)
+                safe_name = re.sub(r'[^A-Za-z0-9._-]+', '_', fname) or "preview.pdf"
+                return self.send_body(200, data, "application/pdf", {
+                    "Content-Disposition": 'inline; filename="%s"' % safe_name,
+                    "X-Frame-Options": "SAMEORIGIN",
+                })
             if not self.token_ok(self.headers.get("X-DR-Token", "")):
                 return self.send_json({"error": "missing or wrong token"}, 401)
             if key and key != app.key:
@@ -2428,17 +2953,22 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_body(200, read_text(UI_FILE).replace("__DR_TOKEN__", app.token), "text/html; charset=utf-8")
         self.send_body(404 if key else 200, index_page(app, missing=bool(key)), "text/html; charset=utf-8")
 
-    def forward(self, key, method, path, query):
+    def forward(self, key, method, path, query, token=None):
         """Pass an API call for another review on this machine on to that review's server."""
         body, info, reply = self.read_body() or None, sibling(key), None
         if info:
             conn = connect(info, timeout=60)
             try:
                 conn.request(method, path + ("?" + query if query else ""), body=body,
-                             headers={"X-DR-Token": self.headers.get("X-DR-Token", ""),
+                             headers={"X-DR-Token": token or self.headers.get("X-DR-Token", ""),
                                       "Content-Type": "application/json"})
                 resp = conn.getresponse()
-                reply = (resp.status, resp.read(), resp.getheader("Content-Type") or "application/json")
+                extra = {}
+                for h in ("Content-Disposition", "X-Frame-Options"):
+                    val = resp.getheader(h)
+                    if val:
+                        extra[h] = val
+                reply = (resp.status, resp.read(), resp.getheader("Content-Type") or "application/json", extra)
             except (OSError, http.client.HTTPException):
                 pass  # it stopped just now
             finally:
@@ -2544,7 +3074,7 @@ def housekeeping(app, httpd):
             sys.stderr.write("could not save state: %s\n" % e)
         if app.listen.get("mode") == "unix" and not unix_alive(app.listen["current"]):
             point_symlink(app.listen["current"], app.listen["socket"])  # nobody holds the shared entry: take it
-        if idle_limit > 0 and now() - app.last_activity > idle_limit and app.explainer.active == 0:
+        if idle_limit > 0 and now() - app.last_activity > idle_limit and app.explainer.active == 0 and not app.latex.is_compiling():
             sys.stderr.write("idle for %.1f h, shutting down\n" % app.opts.idle_hours)
             httpd.shutdown()
             return
@@ -2590,6 +3120,7 @@ def cmd_serve(opts):
         httpd.serve_forever(poll_interval=0.5)
     finally:
         app.explainer.stop_all()
+        app.latex.stop_all()
         app.store.save(force=True)
         try:
             if json.loads(read_text(info_path)).get("pid") == os.getpid():
